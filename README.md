@@ -1,2 +1,0 @@
-# DSNovel
-DSNovel project
