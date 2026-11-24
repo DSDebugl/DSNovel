@@ -39,7 +39,7 @@ private final class NotificationObserverHolder: @unchecked Sendable {
 /// 锁屏媒体中心、线控、耳机拔出、电话中断/恢复与媒体服务重置控制器
 @MainActor
 public final class RemoteCommandController {
-    private static let logger = Logger(subsystem: "com.dsnovel.v3", category: "AudioSession")
+    private static let logger = Logger(subsystem: "com.dsnovel.app", category: "AudioSession")
     private struct NowPlayingSnapshot {
         let bookTitle: String
         let chapterTitle: String

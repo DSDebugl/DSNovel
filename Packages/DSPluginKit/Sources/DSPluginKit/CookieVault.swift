@@ -5,7 +5,7 @@ import Security
 
 /// 隔离式 Cookie 与凭据保险箱（L-IOS-5 强检 isSecure/expiresDate/path/isHTTPOnly；L-IOS-7 零全局共享状态污染）
 public actor CookieVault {
-    private static let osLog = Logger(subsystem: "com.dsnovel.v3", category: "CookieVault")
+    private static let osLog = Logger(subsystem: "com.dsnovel.app", category: "CookieVault")
 
     private var storedCookies: [HTTPCookie] = []
     private let keychainService: String
@@ -52,7 +52,7 @@ public actor CookieVault {
     }
 
     public init(
-        keychainService: String = "com.dsnovel.v3.secrets",
+        keychainService: String = "com.dsnovel.app.secrets",
         inMemorySecretsOnly: Bool = false
     ) {
         self.keychainService = keychainService

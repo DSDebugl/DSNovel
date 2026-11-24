@@ -10,7 +10,7 @@ public enum BackgroundTransferEvent: Sendable {
 
 /// 后台 URLSession 传输层（L-IOS-2：支持 AppDelegate 冷启接管、.pending_staging 落盘兜底与登录/网络切换作废 resumeData）
 public final class BackgroundTransferTransport: NSObject, URLSessionDownloadDelegate, @unchecked Sendable {
-    public static let sessionIdentifier = "com.dsnovel.v3.background.downloads"
+    public static let sessionIdentifier = "com.dsnovel.app.background.downloads"
     static let knownAudioExtensions: Set<String> = ["mp3", "m4a", "aac", "flac", "wav", "ogg"]
 
     struct PersistedResumePayload: Codable, Sendable {

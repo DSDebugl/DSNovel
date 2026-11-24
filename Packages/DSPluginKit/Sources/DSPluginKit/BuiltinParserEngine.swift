@@ -11,7 +11,7 @@ public actor BuiltinParserEngine {
     internal let logger: DSDiagnosticLogStore
     internal let webViewService: HeadlessWebViewService
     internal let pool: JSContextPool
-    internal let playbackPool = JSContextPool(maxSlots: 1, labelPrefix: "com.dsnovel.v3.parser.playback")
+    internal let playbackPool = JSContextPool(maxSlots: 1, labelPrefix: "com.dsnovel.app.parser.playback")
 
     internal var installedParsers: [String: BuiltinParserMetaDTO] = [:]
     internal var cachedScriptBodies: [String: String] = [:]
@@ -29,7 +29,7 @@ public actor BuiltinParserEngine {
         cookieVault: CookieVault,
         logger: DSDiagnosticLogStore,
         webViewService: HeadlessWebViewService = HeadlessWebViewService(),
-        pool: JSContextPool = JSContextPool(maxSlots: 2, labelPrefix: "com.dsnovel.v3.parser.js")
+        pool: JSContextPool = JSContextPool(maxSlots: 2, labelPrefix: "com.dsnovel.app.parser.js")
     ) {
         self.preludeParserScript = preludeParserScript
         self.storageDir = storageDir

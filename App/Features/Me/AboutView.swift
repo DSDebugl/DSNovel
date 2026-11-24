@@ -126,7 +126,7 @@ struct AboutView: View {
                         .foregroundStyle(DSColors.inkSecondary)
                         .lineLimit(1)
                 }
-                .padding(.horizontal, DSSpacing.md)
+                .padding(.horizontal, DSSpacing.s5)
                 .frame(minHeight: 48)
                 .accessibilityElement(children: .combine)
 
@@ -150,7 +150,7 @@ struct AboutView: View {
                             .font(DSTypography.caption2.weight(.semibold))
                             .foregroundStyle(DSColors.inkSecondary.opacity(0.70))
                     }
-                    .padding(.horizontal, DSSpacing.md)
+                    .padding(.horizontal, DSSpacing.s5)
                     .frame(minHeight: 48)
                     .contentShape(Rectangle())
                 }
@@ -167,16 +167,18 @@ struct AboutView: View {
                             tint: DSColors.inkSecondary,
                             background: DSColors.inkSecondary.opacity(0.12)
                         )
-                        Text("版本号")
-                            .font(DSTypography.subheadline)
-                            .foregroundStyle(DSColors.inkPrimary)
+                        HStack(spacing: DSSpacing.xs) {
+                            Text("版本号")
+                                .font(DSTypography.subheadline)
+                                .foregroundStyle(DSColors.inkPrimary)
+                            Text(AuthorInfo.appVersionDisplay)
+                                .font(DSTypography.numericFootnote)
+                                .foregroundStyle(DSColors.inkSecondary)
+                                .lineLimit(1)
+                        }
                         Spacer(minLength: 8)
-                        Text(AuthorInfo.appVersionDisplay)
-                            .font(DSTypography.numericFootnote)
-                            .foregroundStyle(DSColors.inkSecondary)
-                            .lineLimit(1)
                     }
-                    .padding(.horizontal, DSSpacing.md)
+                    .padding(.horizontal, DSSpacing.s5)
                     .frame(minHeight: 48)
                     .contentShape(Rectangle())
                 }
@@ -205,7 +207,7 @@ struct AboutView: View {
                             .foregroundStyle(DSColors.danger)
                         Spacer(minLength: 8)
                     }
-                    .padding(.horizontal, DSSpacing.md)
+                    .padding(.horizontal, DSSpacing.s5)
                     .frame(minHeight: 48)
                     .contentShape(Rectangle())
                 }
@@ -237,7 +239,7 @@ struct AboutView: View {
     private var insetDivider: some View {
         Divider()
             .overlay(DSColors.separator.opacity(0.28))
-            .padding(.leading, 54)
+            .padding(.leading, 60)
     }
 
     private func rowBadgeIcon(_ systemName: String, tint: Color, background: Color) -> some View {

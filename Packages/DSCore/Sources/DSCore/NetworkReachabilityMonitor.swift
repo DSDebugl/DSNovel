@@ -33,7 +33,7 @@ public final class NetworkReachabilityMonitor {
     public private(set) var hasReceivedInitialPath: Bool
 
     private var monitor: NWPathMonitor?
-    private let queue = DispatchQueue(label: "com.dsnovel.v3.network.monitor", qos: .utility)
+    private let queue = DispatchQueue(label: "com.dsnovel.app.network.monitor", qos: .utility)
     private let sequenceBox = PathSequenceBox()
     private var appliedSequence: UInt64 = 0
     private var onNetworkTypeChanged: (@MainActor (Bool) -> Void)?

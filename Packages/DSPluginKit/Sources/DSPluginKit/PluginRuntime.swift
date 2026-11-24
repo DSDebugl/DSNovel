@@ -35,12 +35,14 @@ public actor PluginRuntime: AudioResolving {
     internal let webViewService: HeadlessWebViewService
 
     internal var registeredScripts: [String: (meta: SourceMetaDTO, script: String)] = [:]
+    internal var consecutiveTimeoutCounts: [String: Int] = [:]
+    internal var circuitBreakerUntil: [String: Date] = [:]
 
     public init(
         preludeScript: String,
         httpClient: HostHTTPClient,
         cookieVault: CookieVault,
-        pool: JSContextPool = JSContextPool(maxSlots: 4, labelPrefix: "com.dsnovel.v3.plugin.js"),
+        pool: JSContextPool = JSContextPool(maxSlots: 4, labelPrefix: "com.dsnovel.app.plugin.js"),
         cacheRoot: URL? = nil,
         logger: DSDiagnosticLogStore,
         builtinParser: BuiltinParserEngine? = nil,
@@ -58,8 +60,35 @@ public actor PluginRuntime: AudioResolving {
 
     public func registerSources(_ items: [(meta: SourceMetaDTO, scriptBody: String)]) {
         registeredScripts.removeAll()
+        consecutiveTimeoutCounts.removeAll()
+        circuitBreakerUntil.removeAll()
         for item in items {
             registeredScripts[item.meta.id] = (item.meta, item.scriptBody)
+        }
+    }
+
+    internal func checkCircuitBreaker(ownerID: String?) throws {
+        guard let ownerID, !ownerID.hasPrefix("preview-"),
+              let until = circuitBreakerUntil[ownerID] else { return }
+        if Date() < until {
+            throw PluginSecurityError.scriptError("书源连续超时已临时熔断，请稍后重试")
+        }
+        circuitBreakerUntil.removeValue(forKey: ownerID)
+        consecutiveTimeoutCounts.removeValue(forKey: ownerID)
+    }
+
+    internal func recordExecutionSuccess(ownerID: String?) {
+        guard let ownerID, !ownerID.hasPrefix("preview-") else { return }
+        consecutiveTimeoutCounts.removeValue(forKey: ownerID)
+        circuitBreakerUntil.removeValue(forKey: ownerID)
+    }
+
+    internal func recordExecutionTimeout(ownerID: String?) {
+        guard let ownerID, !ownerID.hasPrefix("preview-") else { return }
+        let next = (consecutiveTimeoutCounts[ownerID] ?? 0) + 1
+        consecutiveTimeoutCounts[ownerID] = next
+        if next >= 2 {
+            circuitBreakerUntil[ownerID] = Date().addingTimeInterval(60)
         }
     }
 

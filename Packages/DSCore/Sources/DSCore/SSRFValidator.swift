@@ -3,7 +3,7 @@ import Foundation
 
 /// 公共私网/回环 SSRF 硬拦截器（下沉至 DSCore，供 DSPluginKit 与 DSDesignSystem 共同复用，保持单向依赖 DAG）
 public enum DSSSRFValidator {
-    private static let dnsQueue = DispatchQueue(label: "com.dsnovel.v3.ssrf.dns", qos: .userInitiated, attributes: .concurrent)
+    private static let dnsQueue = DispatchQueue(label: "com.dsnovel.app.ssrf.dns", qos: .userInitiated, attributes: .concurrent)
 
     /// 快速同步校验 URL 是否为合法公网 HTTP(S) 地址
     public static func isPublicHTTPURL(_ url: URL) -> Bool {

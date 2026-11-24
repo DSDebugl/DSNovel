@@ -42,7 +42,7 @@ public actor DSDiagnosticLogStore {
 
     private static let loggers: [DSLogCategory: Logger] = Dictionary(
         uniqueKeysWithValues: DSLogCategory.allCases.map {
-            ($0, Logger(subsystem: "com.dsnovel.v3", category: $0.rawValue))
+            ($0, Logger(subsystem: "com.dsnovel.app", category: $0.rawValue))
         }
     )
 
@@ -56,7 +56,7 @@ public actor DSDiagnosticLogStore {
     public func record(category: DSLogCategory, level: String = "INFO", message: String) {
         let normalizedLevel = level.uppercased()
         let sanitized = Self.sanitize(message)
-        let logger = Self.loggers[category] ?? Logger(subsystem: "com.dsnovel.v3", category: category.rawValue)
+        let logger = Self.loggers[category] ?? Logger(subsystem: "com.dsnovel.app", category: category.rawValue)
         switch normalizedLevel {
         case "ERROR": logger.error("\(sanitized, privacy: .public)")
         case "WARN": logger.warning("\(sanitized, privacy: .public)")

@@ -88,7 +88,7 @@ final class DSStorageAndBackupTests: XCTestCase {
 
     @MainActor
     func testIsolatedAppSettingsStoreDoesNotPolluteStandardDefaults() {
-        let suiteName = "com.dsnovel.v3.test.\(UUID().uuidString)"
+        let suiteName = "com.dsnovel.app.test.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suiteName)!
         defer { defaults.removePersistentDomain(forName: suiteName) }
 

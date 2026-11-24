@@ -68,7 +68,7 @@ final class AudioSmartAnalyzer: @unchecked Sendable {
     }
 
     private let stagingLock = OSAllocatedUnfairLock(initialState: StagingState())
-    private let workQueue = DispatchQueue(label: "com.dsnovel.audio.smartfft", qos: .utility)
+    private let workQueue = DispatchQueue(label: "com.dsnovel.app.audio.smartfft", qos: .utility)
     private let analyzeSource: DispatchSourceUserDataOr
     private let fftSetup: FFTSetup?
     private let hannWindow: [Float]

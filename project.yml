@@ -32,6 +32,7 @@ settings:
     CODE_SIGNING_REQUIRED: NO
     CODE_SIGN_IDENTITY: ""
     DEVELOPMENT_TEAM: ""
+    MARKETING_VERSION: "3.3.9"
     CURRENT_PROJECT_VERSION: "1"
   configs:
     Release:
@@ -73,7 +74,7 @@ targets:
           - zh-Hans
         CFBundleDisplayName: DSNovel
         CFBundleName: DSNovel
-        CFBundleShortVersionString: "3.0.0"
+        CFBundleShortVersionString: "3.3.9"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         LSRequiresIPhoneOS: true
         ITSAppUsesNonExemptEncryption: false
@@ -91,7 +92,7 @@ targets:
           - UIInterfaceOrientationPortrait
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.dsnovel.v3
+        PRODUCT_BUNDLE_IDENTIFIER: com.dsnovel.app
         TARGETED_DEVICE_FAMILY: "1"
         SWIFT_VERSION: "6.0"
         SWIFT_STRICT_CONCURRENCY: complete
@@ -116,7 +117,7 @@ targets:
       - package: DSDesignSystem
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.dsnovel.v3.tests
+        PRODUCT_BUNDLE_IDENTIFIER: com.dsnovel.app.tests
         TARGETED_DEVICE_FAMILY: "1"
         SWIFT_VERSION: "6.0"
         SWIFT_STRICT_CONCURRENCY: complete
@@ -134,7 +135,7 @@ targets:
       - target: DSNovel
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: com.dsnovel.v3.uitests
+        PRODUCT_BUNDLE_IDENTIFIER: com.dsnovel.app.uitests
         TARGETED_DEVICE_FAMILY: "1"
         SWIFT_VERSION: "6.0"
         SWIFT_STRICT_CONCURRENCY: complete

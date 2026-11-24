@@ -116,7 +116,7 @@ final class DSB3SecondAuditRegressionTests: XCTestCase {
     // UX2-03: AppSettingsStore 倍速持久化往返
     @MainActor
     func testUX2_03_PlaybackRatePersistedAcrossInstances() {
-        let suite = "com.dsnovel.v3.b3.rate.\(UUID().uuidString)"
+        let suite = "com.dsnovel.app.b3.rate.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
 

@@ -141,7 +141,7 @@ public final class ListeningStatsStore {
         }
     }
 
-    private static let ioQueue = DispatchQueue(label: "com.dsnovel.v3.listeningStats.io", qos: .utility)
+    private static let ioQueue = DispatchQueue(label: "com.dsnovel.app.listeningStats.io", qos: .utility)
 
     private func takeFlushPayload() -> (URL, [DailyBookListeningRecord])? {
         guard pendingFlushSeconds > 0, let url = fileURL else { return nil }

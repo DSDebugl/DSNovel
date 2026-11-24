@@ -300,18 +300,11 @@ public actor CoverImagePipeline {
         guard !Task.isCancelled, epoch == cacheEpoch else { return nil }
 
         do {
-            var req = URLRequest(url: url)
-            req.timeoutInterval = 10
-            req.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1", forHTTPHeaderField: "User-Agent")
-            if let scheme = url.scheme, let host = url.host {
-                req.setValue("\(scheme)://\(host)/", forHTTPHeaderField: "Referer")
-            }
-            let (data, resp) = try await session.data(for: req)
-            guard !Task.isCancelled, epoch == cacheEpoch else { return nil }
-            guard let http = resp as? HTTPURLResponse else {
+            guard let (data, http) = try await fetchValidatedImageData(startingAt: url) else {
                 recordNegative(key: key, ttl: min(12, negativeTTL))
                 return nil
             }
+            guard !Task.isCancelled, epoch == cacheEpoch else { return nil }
             let ct = http.value(forHTTPHeaderField: "Content-Type")
             guard (200...299).contains(http.statusCode), data.count <= Self.maxImageBytes else {
                 let isPermanent = (http.statusCode == 404 || http.statusCode == 410)
@@ -357,6 +350,25 @@ public actor CoverImagePipeline {
             }
             return nil
         }
+    }
+
+    /// 逐跳校验公网语法 + DNS 私网/回环解析，并用块级流式 10MB 硬上限防重定向 SSRF 与 OOM
+    private func fetchValidatedImageData(startingAt initialURL: URL) async throws -> (Data, HTTPURLResponse)? {
+        var currentURL = initialURL
+        for hop in 0...5 {
+            guard DSSSRFValidator.isPublicHTTPURL(currentURL),
+                  await DSSSRFValidator.firstBlockedResolvedHost(for: currentURL) == nil else { return nil }
+            var req = URLRequest(url: currentURL)
+            req.timeoutInterval = 10
+            req.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1", forHTTPHeaderField: "User-Agent")
+            if let scheme = currentURL.scheme, let host = currentURL.host { req.setValue("\(scheme)://\(host)/", forHTTPHeaderField: "Referer") }
+            let (data, http) = try await DSCappedHTTPTransfer.fetch(request: req, session: session, maxBytes: Self.maxImageBytes, blockRedirects: true)
+            guard (301...303).contains(http.statusCode) || http.statusCode == 307 || http.statusCode == 308 else { return (data, http) }
+            guard hop < 5, let loc = http.value(forHTTPHeaderField: "Location")?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !loc.isEmpty, let nextURL = URL(string: loc, relativeTo: currentURL)?.absoluteURL else { return nil }
+            currentURL = nextURL
+        }
+        return nil
     }
 
     private func diskURL(for key: String) -> URL {

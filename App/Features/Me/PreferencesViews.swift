@@ -11,7 +11,7 @@ enum AuthorInfo {
     static let copyrightText = "© 2026 DS"
 
     static var shortVersion: String {
-        (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "3.0.0"
+        (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String) ?? "3.3.9"
     }
 
     static var buildNumber: String {
@@ -19,7 +19,7 @@ enum AuthorInfo {
     }
 
     static var appVersionDisplay: String {
-        "v\(shortVersion) (\(buildNumber))"
+        shortVersion
     }
 }
 

@@ -173,15 +173,18 @@ public actor HostHTTPClient {
     }
 
     private func fetchCappedData(for request: URLRequest, currentURL: URL) async throws -> (Data, HTTPURLResponse) {
-        let cap = Self.maxResponseBytes
-        let (data, rawResp) = try await session.data(for: request)
-        guard let http = rawResp as? HTTPURLResponse else {
+        do {
+            return try await DSCappedHTTPTransfer.fetch(
+                request: request,
+                session: session,
+                maxBytes: Self.maxResponseBytes,
+                blockRedirects: true
+            )
+        } catch DSCappedHTTPError.responseTooLarge {
+            throw PluginSecurityError.scriptError("响应体超过 16MB 上限")
+        } catch DSCappedHTTPError.nonHTTPResponse {
             throw PluginSecurityError.invalidURL(currentURL.absoluteString)
         }
-        if http.expectedContentLength > Int64(cap) || data.count > cap {
-            throw PluginSecurityError.scriptError("响应体超过 16MB 上限")
-        }
-        return (data, http)
     }
 
     private static func resolveRedirectURL(_ location: String, relativeTo currentURL: URL) -> URL? {

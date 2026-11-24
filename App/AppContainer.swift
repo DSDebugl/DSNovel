@@ -123,11 +123,11 @@ final class AppContainer {
 
         let defaults: UserDefaults
         if AppLaunchConfig.shouldResetState {
-            let suiteName = "com.dsnovel.v3.uitest.reset"
+            let suiteName = "com.dsnovel.app.uitest.reset"
             UserDefaults.standard.removePersistentDomain(forName: suiteName)
             defaults = UserDefaults(suiteName: suiteName) ?? .standard
         } else if inMemoryOnly {
-            defaults = UserDefaults(suiteName: "com.dsnovel.v3.inmemory.\(UUID().uuidString)") ?? .standard
+            defaults = UserDefaults(suiteName: "com.dsnovel.app.inmemory.\(UUID().uuidString)") ?? .standard
         } else {
             defaults = .standard
         }
@@ -163,7 +163,7 @@ final class AppContainer {
         let downloadTransport: BackgroundTransferTransport? = inMemoryOnly
             ? BackgroundTransferTransport(
                 baseDirectory: downloadsRoot,
-                sessionIdentifier: "com.dsnovel.v3.background.inmemory.\(UUID().uuidString)"
+                sessionIdentifier: "com.dsnovel.app.background.inmemory.\(UUID().uuidString)"
             )
             : nil
         self.downloads = DownloadCoordinator(

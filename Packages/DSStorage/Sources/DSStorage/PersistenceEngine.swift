@@ -6,7 +6,7 @@ import SwiftData
 /// 统一后台持久化 Actor（@ModelActor 串行隔离，零主线程数据库 I/O）
 @ModelActor
 public actor PersistenceEngine: PlaybackProgressPersisting {
-    private static let logger = Logger(subsystem: "com.dsnovel.v3", category: DSLogCategory.storage.rawValue)
+    private static let logger = Logger(subsystem: "com.dsnovel.app", category: DSLogCategory.storage.rawValue)
 
     /// 在后台队列构造 @ModelActor，确保 DefaultSerialModelExecutor 绝不绑定到主线程
     public static func makeOffMain(modelContainer: ModelContainer) -> PersistenceEngine {

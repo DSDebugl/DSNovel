@@ -1,9 +1,16 @@
 import DSCore
 import Foundation
 import JavaScriptCore
+import os
+
+private final class SlotCompletionFlag: @unchecked Sendable {
+    private let lock = OSAllocatedUnfairLock(initialState: false)
+    func markCompleted() { lock.withLock { $0 = true } }
+    var isCompleted: Bool { lock.withLock { $0 } }
+}
 
 extension PluginRuntime {
-    /// AUD-13：使用固定串行队列池执行 JS；超时立即返回错误给调用方，但槽位仅在执行块真正退出后释放
+    /// 使用有界串行队列池执行 JS；纯死循环超时后经短暂宽限自动退役替补卡死槽位并触发单源熔断
     internal func evaluateInSandbox(
         scriptBody: String,
         fixedOwnerID: String?,
@@ -11,7 +18,13 @@ extension PluginRuntime {
         timeoutSeconds: TimeInterval,
         command: SandboxCommand
     ) async throws -> String {
-        let lease = try await pool.acquireLease()
+        try checkCircuitBreaker(ownerID: fixedOwnerID)
+        let lease: JSSlotLease
+        do {
+            lease = try await pool.acquireLease(timeoutSeconds: max(5.0, timeoutSeconds))
+        } catch is CancellationError where !Task.isCancelled {
+            throw PluginSecurityError.timeout(seconds: timeoutSeconds)
+        }
         let prelude = preludeScript
         let client = httpClient
         let vault = cookieVault
@@ -21,15 +34,21 @@ extension PluginRuntime {
         let slotPool = pool
         let snapshotMeta = registeredScripts.mapValues(\.meta)
         let cancelToken = SandboxCancellationToken()
+        let completionFlag = SlotCompletionFlag()
 
-        return try await withTaskCancellationHandler {
+        let result: String = try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (cont: CheckedContinuation<String, Error>) in
                 let gate = OneShotTimeoutGate(cont)
-                let timeoutTask = Task.detached(priority: .userInitiated) {
+                let timeoutTask = Task.detached(priority: .userInitiated) { [weak self] in
                     try? await Task.sleep(for: .seconds(timeoutSeconds))
                     guard !Task.isCancelled else { return }
                     gate.resume(throwing: PluginSecurityError.timeout(seconds: timeoutSeconds))
                     cancelToken.cancel()
+                    await self?.recordExecutionTimeout(ownerID: fixedOwnerID)
+                    try? await Task.sleep(for: .seconds(2.0))
+                    if !completionFlag.isCompleted {
+                        _ = await slotPool.retireAndReplaceLease(lease)
+                    }
                 }
                 cancelToken.onCancel {
                     timeoutTask.cancel()
@@ -37,6 +56,7 @@ extension PluginRuntime {
                 }
                 lease.queue.async {
                     defer {
+                        completionFlag.markCompleted()
                         timeoutTask.cancel()
                         Task { await slotPool.releaseLease(lease) }
                     }
@@ -118,6 +138,8 @@ extension PluginRuntime {
         } onCancel: {
             cancelToken.cancel()
         }
+        recordExecutionSuccess(ownerID: fixedOwnerID)
+        return result
     }
 
     internal static func jsStringValue(_ val: JSValue?, default fallback: String = "") -> String {

@@ -53,8 +53,7 @@ struct MeRootView: View {
     }
 
     private var appVersionText: String {
-        let ver = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "3.0.0"
-        return "v\(ver)"
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "3.3.9"
     }
 
     var body: some View {
