@@ -122,10 +122,11 @@ final class AudioSmartAnalyzer: @unchecked Sendable {
         let requiredBytes = frames * stride * MemoryLayout<Float>.size
         guard Int(firstBuf.mDataByteSize) >= requiredBytes else { return }
 
-        let samples = mData.assumingMemoryBound(to: Float.self)
+        let samplesAddr = UInt(bitPattern: mData)
         let hopSamples = max(2048, Int(sampleRate * 0.15))
 
         let shouldTrigger: Bool = stagingLock.withLockIfAvailable { state in
+            guard let samples = UnsafePointer<Float>(bitPattern: samplesAddr) else { return false }
             state.enabled = true
             state.sampleRate = sampleRate
             state.intensity = intensity

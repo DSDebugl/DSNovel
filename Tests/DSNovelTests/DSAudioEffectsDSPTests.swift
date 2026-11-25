@@ -45,7 +45,17 @@ struct DSAudioEffectsDSPTests {
             smartOffsets: extremeOffsets,
             smartEnabled: true
         )
-        #expect(combined == [-10.0, -4.0, 10.0, 10.0, -1.5])
+        // voiceBoost = [-3, -1, 4, 3.5, 0.5] -> 正向 *0.85 = [-3, -1, 3.4, 2.975, 0.425]
+        #expect(combined[0] == -10.0)
+        #expect(combined[1] == -4.0)
+        #expect(abs(combined[2] - 9.4) < 0.01)
+        #expect(abs(combined[3] - 9.475) < 0.01)
+        #expect(abs(combined[4] - (-2.075)) < 0.01)
+
+        // 响度增强与防爆音动态上限联动收敛
+        #expect(AudioDSPParameters.maxDynamicUpGain(forVolumeBoostDB: 0) == 2.0)
+        #expect(AudioDSPParameters.maxDynamicUpGain(forVolumeBoostDB: 9) < 1.35)
+        #expect(AudioDSPParameters.eqMakeupLinearGain(for: staticVoice) < 1.0)
     }
 
     @Test("白盒测试：Pre-EQ FFT 在 8kHz 低采样率、静音与浑浊/齿音合成信号下安全无越界")

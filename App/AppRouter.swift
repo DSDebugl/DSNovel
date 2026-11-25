@@ -39,7 +39,9 @@ final class AppRouter {
     private var lastPushedDestination: AppDestination?
     private var lastPushedTimestamp: TimeInterval = 0
 
-    init() {}
+    init(initialTab: DSMainTab = .library) {
+        self.selectedTab = initialTab
+    }
 
     func selectTab(_ tab: DSMainTab) {
         if selectedTab == tab {

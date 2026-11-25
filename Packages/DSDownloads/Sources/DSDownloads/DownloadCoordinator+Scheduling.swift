@@ -1,3 +1,4 @@
+import AVFoundation
 import DSCore
 import DSPluginKit
 import Foundation
@@ -72,7 +73,7 @@ extension DownloadCoordinator {
             batch.append(snap)
         }
         if !batch.isEmpty {
-            try? await persistence.upsertDownloadsBatch(batch)
+            await persistBatchWithLogging(batch, context: "入队下载")
         }
         if didPromoteCompletedPrecache {
             recomputeTotalDiskBytes()
@@ -104,9 +105,39 @@ extension DownloadCoordinator {
         return available >= minimumFreeDiskBytes
     }
 
+    private static let wifiBlockedReason = "等待 Wi-Fi 连接"
+    private static let diskBlockedReason = "磁盘空间不足，等待释放"
+
+    private func annotateQueuedReason(_ reason: String) {
+        var changed = false
+        for (id, var rec) in allRecordsByID where rec.state == .queued && (rec.errorMessage == nil || rec.errorMessage == Self.wifiBlockedReason || rec.errorMessage == Self.diskBlockedReason) {
+            rec.errorMessage = reason
+            allRecordsByID[id] = rec
+            changed = true
+        }
+        if changed { refreshManualRecords() }
+    }
+
+    private func clearQueuedBlockReasons() {
+        var changed = false
+        for (id, var rec) in allRecordsByID where rec.state == .queued && (rec.errorMessage == Self.wifiBlockedReason || rec.errorMessage == Self.diskBlockedReason) {
+            rec.errorMessage = nil
+            allRecordsByID[id] = rec
+            changed = true
+        }
+        if changed { refreshManualRecords() }
+    }
+
     func scheduleNextIfPossible() {
-        if wifiOnlyEnabled && !isCurrentlyOnWiFi { return }
-        guard hasSufficientFreeDiskSpace() else { return }
+        if wifiOnlyEnabled && !isCurrentlyOnWiFi {
+            annotateQueuedReason(Self.wifiBlockedReason)
+            return
+        }
+        guard hasSufficientFreeDiskSpace() else {
+            annotateQueuedReason(Self.diskBlockedReason)
+            return
+        }
+        clearQueuedBlockReasons()
         let queued = allRecordsByID.values.filter { $0.state == .queued }.sorted {
             if $0.createdAt != $1.createdAt { return $0.createdAt < $1.createdAt }
             return $0.chapterIndex < $1.chapterIndex
@@ -124,6 +155,9 @@ extension DownloadCoordinator {
         guard var current = allRecordsByID[snapshot.id], current.state.canTransition(to: .resolving) else { return }
         scheduler.markStarted(id: current.id, kind: current.kind)
         current.state = .resolving
+        if current.errorMessage == "等待 Wi-Fi 连接" || current.errorMessage == "磁盘空间不足，等待释放" {
+            current.errorMessage = nil
+        }
         allRecordsByID[current.id] = current
         refreshManualRecords()
 
@@ -132,7 +166,7 @@ extension DownloadCoordinator {
             guard let self else { return }
             defer { self.resolveTasks.removeValue(forKey: taskID) }
             guard !Task.isCancelled, self.allRecordsByID[taskID]?.state == .resolving else { return }
-            try? await self.persistence.upsertDownload(current)
+            await self.persistRecordWithDirtyRetry(current)
             do {
                 let chapter = ChapterDTO(id: current.chapterID, index: current.chapterIndex, title: current.chapterTitle, url: current.chapterURL)
                 let stream = try await self.audioResolver.resolveAudio(
@@ -155,7 +189,7 @@ extension DownloadCoordinator {
                 latest.state = .downloading
                 latest.errorMessage = stream.isTrial ? "当前为试听音频片段" : nil
                 self.allRecordsByID[taskID] = latest
-                try? await self.persistence.upsertDownload(latest)
+                await self.persistRecordWithDirtyRetry(latest)
                 guard !Task.isCancelled, self.allRecordsByID[taskID]?.state == .downloading else {
                     return
                 }
@@ -165,7 +199,7 @@ extension DownloadCoordinator {
                     self.autoPausedForCellularIDs.insert(taskID)
                     self.scheduler.markFinished(id: taskID)
                     self.progressFeed.clearSpeed(for: taskID)
-                    try? await self.persistence.upsertDownload(latest)
+                    await self.persistRecordWithDirtyRetry(latest)
                     self.refreshManualRecords()
                     return
                 }
@@ -187,5 +221,30 @@ extension DownloadCoordinator {
                 }
             }
         }
+    }
+
+    /// 探测已落盘音频文件的真实码率并映射为标准/高清/超清，确保下载展示与播放器实测一致
+    nonisolated static func probeDownloadedAudioQualityTier(at url: URL, fileSize: Int64) async -> AudioQualityTier? {
+        let asset = AVURLAsset(url: url)
+        if let tracks = try? await asset.loadTracks(withMediaType: .audio),
+           let firstTrack = tracks.first,
+           let dataRate = try? await firstTrack.load(.estimatedDataRate),
+           dataRate.isFinite, dataRate > 0 {
+            let kbps = Int((dataRate / 1000.0).rounded())
+            if kbps > 0 {
+                return AudioQualityTier.fromBitrateKbps(kbps)
+            }
+        }
+        if fileSize > 0,
+           let duration = try? await asset.load(.duration) {
+            let sec = duration.seconds
+            if sec.isFinite, sec > 1.0 {
+                let kbps = Int((Double(fileSize) * 8.0 / sec / 1000.0).rounded())
+                if kbps > 0 {
+                    return AudioQualityTier.fromBitrateKbps(kbps)
+                }
+            }
+        }
+        return nil
     }
 }

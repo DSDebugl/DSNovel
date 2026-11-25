@@ -62,4 +62,23 @@ struct DSSourceGroupingTests {
         let custom = makeSource(id: "custom-1", name: "自定义源")
         #expect(SourceListHelper.conciseSummary(for: custom) == "这是一段冗长的旧版描述")
     }
+
+    @Test("SourceOrganizeModel.moveGroups 支持拖动重排非默认分组且保持默认分组置底")
+    @MainActor
+    func groupDragReorderRespectsCustomPriorityAndPinsDefaultLast() {
+        let sources = [
+            SourceMetaDTO(id: "s1", name: "听书网", version: "1", groupName: "精品有声", sortOrder: 0),
+            SourceMetaDTO(id: "s2", name: "喜马拉雅", version: "1", groupName: "主力书源", sortOrder: 1),
+        ]
+        let model = SourceOrganizeModel()
+        model.load(from: sources, customGroups: ["精品有声", "主力书源"])
+        #expect(model.groupNames == ["精品有声", "主力书源", "默认分组"])
+
+        let ordered = model.moveGroups(from: IndexSet(integer: 1), to: 0)
+        #expect(ordered == ["主力书源", "精品有声"])
+        #expect(model.groupNames == ["主力书源", "精品有声", "默认分组"])
+
+        let resolved = SourceListHelper.allGroupNames(sources: sources, customGroups: ordered)
+        #expect(resolved == ["主力书源", "精品有声", "默认分组"])
+    }
 }

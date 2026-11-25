@@ -8,6 +8,7 @@ import SwiftUI
 /// 书架根视图（1:1 复刻 v2.8：标题「书籍」/编辑态「已选 N 项」、ContinueSection、4 组 DSChipBar、3 列网格/64pt 列表、隐藏底栏 + 液态玻璃 ShelfSelectionBar）
 struct LibraryRootView: View {
     @Environment(\.accessibilityReduceMotion) var systemReduceMotion
+    @Environment(\.dsAccentTheme) private var accentTheme
     @Environment(\.dsReduceMotion) var appReduceMotion
     @Environment(AppContainer.self) var container
     @Environment(AppRouter.self) var router
@@ -34,6 +35,7 @@ struct LibraryRootView: View {
     private var reduceMotion: Bool { systemReduceMotion || appReduceMotion }
 
     var body: some View {
+        let _ = accentTheme
         @Bindable var bindableSettings = settings
         let dlOverview = LibraryOrganizerHelper.computeDownloadedOverview(from: downloads.manualRecords)
 

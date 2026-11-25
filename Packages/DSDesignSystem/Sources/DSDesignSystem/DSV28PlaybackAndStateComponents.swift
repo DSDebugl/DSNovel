@@ -160,7 +160,7 @@ public struct DSContinueCard: View {
 
     private var subtitleText: String {
         if !progressSubtitle.isEmpty { return progressSubtitle }
-        return book.narrator.isEmpty ? book.author : book.narrator
+        return DSMetadataSanitizer.displayNarratorOrAuthor(author: book.author, narrator: book.narrator)
     }
 
     public var body: some View {

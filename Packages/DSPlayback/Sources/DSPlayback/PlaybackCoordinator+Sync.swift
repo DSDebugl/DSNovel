@@ -80,6 +80,36 @@ extension PlaybackCoordinator {
         }
     }
 
+    func applyLivePlaybackRate(_ targetRate: Float) {
+        let hasPlayableBuffer: Bool = {
+            guard let item = player.currentItem else { return false }
+            if let url = (item.asset as? AVURLAsset)?.url, url.isFileURL { return true }
+            let now = CMTimeGetSeconds(player.currentTime())
+            guard now.isFinite else { return false }
+            for value in item.loadedTimeRanges {
+                let range = value.timeRangeValue
+                let start = CMTimeGetSeconds(range.start)
+                let end = CMTimeGetSeconds(CMTimeRangeGetEnd(range))
+                if now >= start - 0.5 && end > now + 0.5 { return true }
+            }
+            return false
+        }()
+        if hasPlayableBuffer {
+            player.playImmediately(atRate: targetRate)
+        } else {
+            player.rate = targetRate
+        }
+    }
+
+    func scheduleDebouncedNowPlayingSync() {
+        nowPlayingSyncDebounceTask?.cancel()
+        nowPlayingSyncDebounceTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(150))
+            guard !Task.isCancelled, let self else { return }
+            self.syncNowPlaying()
+        }
+    }
+
     func syncNowPlaying() {
         guard let book = currentBook, let chapter = currentChapter else { return }
         let syncArtwork = onLookupCachedArtwork?(book.coverURL)

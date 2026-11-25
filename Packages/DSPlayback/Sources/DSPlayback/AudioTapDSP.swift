@@ -42,10 +42,10 @@ public enum AudioEQPreset: String, Codable, Sendable, CaseIterable, Identifiable
     public var bandGainsDB: [Float] {
         switch self {
         case .flat: return [0, 0, 0, 0, 0]
-        case .voiceBoost: return [-5, -1, 6, 5, 1]
-        case .warm: return [6, 4, 0, -3, -5]
-        case .night: return [-6, 2, 1, -4, -7]
-        case .bright: return [-3, -1, 3, 6, 5]
+        case .voiceBoost: return [-3, -1, 4, 3.5, 0.5]
+        case .warm: return [3.5, 1.5, 0, -2, -3.5]
+        case .night: return [-3.5, 0.5, 1.5, -2.5, -4.5]
+        case .bright: return [-2, -1, 2, 3.5, 3]
         }
     }
 }
@@ -142,6 +142,7 @@ public final class AudioTapDSP {
     public func currentParameters() -> AudioDSPParameters {
         AudioDSPParameters(
             bandGainsDB: customBands,
+            isCustomEQ: isCustomEQ,
             stereoBalance: stereoBalance,
             volumeBoostEnabled: volumeBoostEnabled,
             volumeBoostDB: volumeBoostDB,

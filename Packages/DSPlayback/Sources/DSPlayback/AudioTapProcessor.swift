@@ -211,7 +211,8 @@ public final class AudioTapProcessor: @unchecked Sendable {
                 let effectiveGains = AudioDSPParameters.combinedBandGains(
                     staticBands: next.bandGainsDB,
                     smartOffsets: smartOffsetsDB,
-                    smartEnabled: next.smartRepairEnabled
+                    smartEnabled: next.smartRepairEnabled,
+                    isCustomEQ: next.isCustomEQ
                 )
                 let needsNewFilter = current.biquad.gainsDB != effectiveGains || current.biquad.sampleRate != sampleRate
                 let holder = needsNewFilter ? BiquadHolder(gainsDB: effectiveGains, sampleRate: sampleRate) : current.biquad
@@ -235,7 +236,8 @@ public final class AudioTapProcessor: @unchecked Sendable {
                 let effectiveGains = AudioDSPParameters.combinedBandGains(
                     staticBands: current.params.bandGainsDB,
                     smartOffsets: offsets,
-                    smartEnabled: true
+                    smartEnabled: true,
+                    isCustomEQ: current.params.isCustomEQ
                 )
                 let maxDelta = zip(current.biquad.gainsDB, effectiveGains).reduce(Float(0)) { acc, pair in
                     max(acc, abs(pair.0 - pair.1))
@@ -261,7 +263,8 @@ public final class AudioTapProcessor: @unchecked Sendable {
                     let effectiveGains = AudioDSPParameters.combinedBandGains(
                         staticBands: current.params.bandGainsDB,
                         smartOffsets: self.smartOffsetsDB,
-                        smartEnabled: current.params.smartRepairEnabled
+                        smartEnabled: current.params.smartRepairEnabled,
+                        isCustomEQ: current.params.isCustomEQ
                     )
                     let rebuilt = BiquadHolder(gainsDB: effectiveGains, sampleRate: newRate)
                     self.swapSnapshotLocked(RenderSnapshot(params: current.params, biquad: rebuilt))

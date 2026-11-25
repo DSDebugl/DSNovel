@@ -205,7 +205,14 @@ extension PersistenceEngine {
             sortBy: [SortDescriptor<BookEntity>(\.lastPlayedAt, order: .reverse)]
         )
         desc.fetchLimit = 1
-        guard let book = try? modelContext.fetch(desc).first else { return nil }
+        let fetchedBook: BookEntity?
+        do {
+            fetchedBook = try modelContext.fetch(desc).first
+        } catch {
+            Self.logger.error("fetchLatestPlaybackSession failed: \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
+        guard let book = fetchedBook else { return nil }
         return LastPlaybackSessionSnapshot(
             book: book.toSummaryDTO(),
             chapterID: book.lastChapterID,
@@ -221,7 +228,14 @@ extension PersistenceEngine {
         let targetID = bookID
         var desc = FetchDescriptor<BookEntity>(predicate: #Predicate { $0.id == targetID })
         desc.fetchLimit = 1
-        guard let book = try? modelContext.fetch(desc).first, book.lastPlayedAt != nil else { return nil }
+        let fetchedBook: BookEntity?
+        do {
+            fetchedBook = try modelContext.fetch(desc).first
+        } catch {
+            Self.logger.error("fetchBookLastPlayback failed for book=\(bookID, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
+        guard let book = fetchedBook, book.lastPlayedAt != nil else { return nil }
         return (book.lastChapterIndex, book.lastChapterTitle, book.lastPositionMs)
     }
 

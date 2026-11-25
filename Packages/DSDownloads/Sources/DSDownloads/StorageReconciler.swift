@@ -61,24 +61,45 @@ public actor StorageReconciler {
             }
         }
 
-        // 清理不在已完成记录中的孤儿音频文件（P1-11：10 分钟冷却保护窗防误删刚落盘新文件，忽略 .pending_staging / .resume_data）
+        // F1：先将超 10 分钟孤儿文件移入 .orphan_quarantine 隔离保留 3 天，满期再彻底删除，防写库失败误删音频
         var orphansRemoved = 0
         let graceCutoff = now.addingTimeInterval(-600)
+        let quarantineTTL: TimeInterval = 3 * 86_400
         let resolvedRoot = downloadsRoot.resolvingSymlinksInPath()
+        let quarantineDir = resolvedRoot.appendingPathComponent(".orphan_quarantine", isDirectory: true)
+        if let qFiles = try? FileManager.default.contentsOfDirectory(
+            at: quarantineDir,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        ) {
+            let expireCutoff = now.addingTimeInterval(-quarantineTTL)
+            for qURL in qFiles {
+                let mtime = (try? qURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+                if mtime <= expireCutoff {
+                    try? FileManager.default.removeItem(at: qURL)
+                }
+            }
+        }
+
         if let enumerator = FileManager.default.enumerator(
             at: resolvedRoot,
             includingPropertiesForKeys: [.isRegularFileKey, .contentModificationDateKey],
             options: [.skipsHiddenFiles]
         ) {
             for case let fileURL as URL in enumerator {
-                if fileURL.path.contains(".pending_staging") || fileURL.path.contains(".resume_data") { continue }
+                let p = fileURL.path
+                if p.contains(".pending_staging") || p.contains(".resume_data") || p.contains(".orphan_quarantine") { continue }
                 let vals = try? fileURL.resourceValues(forKeys: [.isRegularFileKey, .contentModificationDateKey])
                 guard vals?.isRegularFile == true else { continue }
                 guard let mtime = vals?.contentModificationDate else { continue }
                 if mtime > graceCutoff { continue }
                 if !expectedPaths.contains(fileURL.resolvingSymlinksInPath().standardizedFileURL.path) {
-                    try? FileManager.default.removeItem(at: fileURL)
-                    orphansRemoved += 1
+                    try? FileManager.default.createDirectory(at: quarantineDir, withIntermediateDirectories: true)
+                    let qDst = quarantineDir.appendingPathComponent("\(UUID().uuidString.prefix(8))_\(fileURL.lastPathComponent)")
+                    if (try? FileManager.default.moveItem(at: fileURL, to: qDst)) != nil {
+                        try? FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: qDst.path)
+                        orphansRemoved += 1
+                    }
                 }
             }
         }
@@ -91,7 +112,7 @@ public actor StorageReconciler {
         ) {
             for dirURL in subdirs {
                 let name = dirURL.lastPathComponent
-                if name == ".pending_staging" || name == ".resume_data" { continue }
+                if name == ".pending_staging" || name == ".resume_data" || name == ".orphan_quarantine" { continue }
                 let isDir = (try? dirURL.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
                 guard isDir else { continue }
                 if let contents = try? FileManager.default.contentsOfDirectory(atPath: dirURL.path),

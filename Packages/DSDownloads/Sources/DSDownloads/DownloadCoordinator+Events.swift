@@ -10,6 +10,15 @@ extension DownloadCoordinator {
             if case .progress = event { return }
             if pendingTransferEvents.count < Self.maxPendingEventsBeforeBootstrap {
                 pendingTransferEvents.append(event)
+            } else {
+                let logStore = logger
+                Task {
+                    await logStore.record(
+                        category: .downloads,
+                        level: "WARN",
+                        message: "启动前传输事件缓冲已满（256），超限事件将由 staging 兜底认领"
+                    )
+                }
             }
             return
         }
@@ -105,7 +114,9 @@ extension DownloadCoordinator {
             let attrs = try? FileManager.default.attributesOfItem(atPath: finalURL.path)
             let size = (attrs?[.size] as? NSNumber)?.int64Value ?? 0
             rec.state = .completed
-            if let resolvedQuality {
+            if let probedQuality = await Self.probeDownloadedAudioQualityTier(at: finalURL, fileSize: size) {
+                rec.qualityTier = probedQuality
+            } else if let resolvedQuality {
                 rec.qualityTier = resolvedQuality
             }
             rec.localRelPath = relPath
@@ -113,13 +124,15 @@ extension DownloadCoordinator {
             rec.downloadedBytes = size
             rec.errorMessage = nil
             allRecordsByID[taskID] = rec
-            try? await persistence.upsertDownload(rec)
+            await persistRecordWithDirtyRetry(rec)
             progressFeed.remove(id: taskID)
             recomputeTotalDiskBytes()
             completedRevision &+= 1
             refreshManualRecords()
             if rec.kind == .precache {
-                await enforceGlobalPrecacheCapIfNeeded(protectingTaskID: taskID)
+                let cap = dynamicPrecacheCapBytes ?? (300 * 1024 * 1024)
+                await enforceGlobalPrecacheCapIfNeeded(protectingTaskID: taskID, maxTotalPrecacheBytes: cap)
+                await onPrecacheCompleted?()
             }
             await reconcileDisk(force: false)
         } catch {
@@ -141,7 +154,9 @@ extension DownloadCoordinator {
         resolvedQualityByTaskID.removeValue(forKey: taskID)
         progressSampleByTaskID.removeValue(forKey: taskID)
         progressFeed.clearSpeed(for: taskID)
-        guard var rec = allRecordsByID[taskID], !rec.state.isTerminal else {
+        // F3/N2：仅允许活跃态（queued/resolving/downloading）进入失败重试，绝不被晚到网络错误改写 paused/cancelled/completed
+        guard var rec = allRecordsByID[taskID],
+              rec.state == .queued || rec.state == .resolving || rec.state == .downloading else {
             scheduleNextIfPossible()
             return
         }
@@ -151,7 +166,7 @@ extension DownloadCoordinator {
             rec.state = .queued
             rec.errorMessage = "等待重试（\(Int(delay))s）：\(message)"
             allRecordsByID[taskID] = rec
-            try? await persistence.upsertDownload(rec)
+            await persistRecordWithDirtyRetry(rec)
             refreshManualRecords()
             retryTasks[taskID]?.cancel()
             retryTasks[taskID] = Task { [weak self] in
@@ -169,12 +184,12 @@ extension DownloadCoordinator {
     internal func markFailedWithoutRetry(taskID: String, message: String) async {
         resolvedQualityByTaskID.removeValue(forKey: taskID)
         progressFeed.clearSpeed(for: taskID)
-        guard var rec = allRecordsByID[taskID], !rec.state.isTerminal else { return }
+        guard var rec = allRecordsByID[taskID], rec.state.canTransition(to: .failed) else { return }
         rec.state = .failed
         rec.retryNotBefore = nil
         rec.errorMessage = message
         allRecordsByID[taskID] = rec
-        try? await persistence.upsertDownload(rec)
+        await persistRecordWithDirtyRetry(rec)
         refreshManualRecords()
         scheduleNextIfPossible()
     }
@@ -245,10 +260,95 @@ extension DownloadCoordinator {
         return true
     }
 
+    func persistBatchWithLogging(_ batch: [DownloadRecordSnapshot], context: String) async {
+        do {
+            try await persistence.upsertDownloadsBatch(batch)
+        } catch {
+            await logger.record(
+                category: .downloads,
+                level: "WARN",
+                message: "\(context)批量写入下载记录失败：\(error.localizedDescription)"
+            )
+        }
+    }
+
+    func persistRecordWithDirtyRetry(_ rec: DownloadRecordSnapshot) async {
+        do {
+            try await persistence.upsertDownload(rec)
+            dirtyPersistenceIDs.remove(rec.id)
+            if dirtyPersistenceIDs.isEmpty {
+                dirtyRetryAttemptCount = 0
+            }
+        } catch {
+            let isNewlyDirty = dirtyPersistenceIDs.insert(rec.id).inserted
+            if isNewlyDirty || dirtyRetryAttemptCount == 0 {
+                await logger.record(
+                    category: .downloads,
+                    level: "ERROR",
+                    message: "写入下载记录失败（已加入重试队列）：\(error.localizedDescription)"
+                )
+            }
+            scheduleDirtyPersistenceRetry()
+        }
+    }
+
+    private func scheduleDirtyPersistenceRetry() {
+        guard dirtyRetryTask == nil else { return }
+        guard dirtyRetryAttemptCount < 8 else { return }
+        let exponent = Double(min(dirtyRetryAttemptCount, 5))
+        let delaySeconds = min(60.0, 2.0 * pow(2.0, exponent))
+        dirtyRetryTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(delaySeconds))
+            guard !Task.isCancelled, let self else { return }
+            self.dirtyRetryTask = nil
+            await self.flushDirtyPersistenceIfNeeded()
+        }
+    }
+
+    func flushDirtyPersistenceIfNeeded() async {
+        guard !dirtyPersistenceIDs.isEmpty else {
+            dirtyRetryAttemptCount = 0
+            return
+        }
+        let pendingIDs = Array(dirtyPersistenceIDs)
+        var recoveredCount = 0
+        var lastError: Error?
+        for id in pendingIDs {
+            guard let rec = allRecordsByID[id] else {
+                dirtyPersistenceIDs.remove(id)
+                continue
+            }
+            do {
+                try await persistence.upsertDownload(rec)
+                dirtyPersistenceIDs.remove(id)
+                recoveredCount += 1
+            } catch {
+                lastError = error
+            }
+        }
+        if dirtyPersistenceIDs.isEmpty {
+            dirtyRetryAttemptCount = 0
+            if recoveredCount > 0 {
+                await logger.record(category: .downloads, level: "INFO", message: "已补写恢复 \(recoveredCount) 条下载记录")
+            }
+        } else {
+            dirtyRetryAttemptCount += 1
+            if dirtyRetryAttemptCount == 1, let lastError {
+                await logger.record(category: .downloads, level: "WARN", message: "下载记录补写重试失败（将按指数退避重试）：\(lastError.localizedDescription)")
+            } else if dirtyRetryAttemptCount >= 8, let lastError {
+                await logger.record(category: .downloads, level: "ERROR", message: "下载记录补写已达退避上限（8次），暂停自动重试：\(lastError.localizedDescription)")
+            }
+            scheduleDirtyPersistenceRetry()
+        }
+    }
+
     public func reconcileDisk(force: Bool) async {
+        await flushDirtyPersistenceIfNeeded()
         guard didLoadPersistenceSuccessfully else { return }
         let rev = completedRevision
-        let completed = allRecordsByID.values.filter { $0.state == .completed }
+        let completed = allRecordsByID.values.filter {
+            $0.state == .completed || (dirtyPersistenceIDs.contains($0.id) && $0.localRelPath != nil)
+        }
         guard let report = await reconciler.reconcileIfNeeded(completedRecords: completed, force: force) else { return }
         if completedRevision == rev {
             totalDiskBytes = report.totalAudioBytes
@@ -266,7 +366,7 @@ extension DownloadCoordinator {
             }
         }
         if !missingBatch.isEmpty {
-            try? await persistence.upsertDownloadsBatch(missingBatch)
+            await persistBatchWithLogging(missingBatch, context: "磁盘对账")
             completedRevision &+= 1
             recomputeTotalDiskBytes()
             refreshManualRecords()

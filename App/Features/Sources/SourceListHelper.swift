@@ -69,12 +69,12 @@ enum SourceListHelper {
             result.append(clean)
         }
 
-        // 优先保证内置主流分组顺序
+        // 优先遵循用户已保存的分组顺序，未入列的新增分组再按内置主流顺序追加
+        for g in customGroups { appendIfNew(g) }
+
         let sourceGroupSet = Set(sources.map { normalizedGroupName($0.groupName) })
         if sourceGroupSet.contains("主力听书") { appendIfNew("主力听书") }
         if sourceGroupSet.contains("精品有声") { appendIfNew("精品有声") }
-
-        for g in customGroups { appendIfNew(g) }
         for src in sources.sorted(by: { $0.sortOrder < $1.sortOrder }) {
             appendIfNew(src.groupName)
         }

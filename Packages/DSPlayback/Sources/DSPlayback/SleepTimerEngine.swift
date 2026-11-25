@@ -14,15 +14,23 @@ public final class SleepTimerEngine {
     public private(set) var mode: SleepTimerMode = .off
     public private(set) var remainingSeconds: Int = 0
     public var fadeOutLastSeconds: Int = 15 {
-        didSet { persistIfBound() }
+        didSet {
+            let clamped = min(120, max(0, fadeOutLastSeconds))
+            if fadeOutLastSeconds != clamped { fadeOutLastSeconds = clamped }
+            persistIfBound()
+        }
     }
     public var autoRewindOnSleepSeconds: Int = 0 {
-        didSet { persistIfBound() }
+        didSet {
+            let clamped = min(60, max(0, autoRewindOnSleepSeconds))
+            if autoRewindOnSleepSeconds != clamped { autoRewindOnSleepSeconds = clamped }
+            persistIfBound()
+        }
     }
     public var lastCustomMinutes: Int = 25 {
         didSet {
             let clamped = min(180, max(5, lastCustomMinutes))
-            if lastCustomMinutes != clamped { lastCustomMinutes = clamped; return }
+            if lastCustomMinutes != clamped { lastCustomMinutes = clamped }
             persistIfBound()
         }
     }
@@ -138,12 +146,9 @@ public final class SleepTimerEngine {
         onFadeFactor: @escaping @MainActor (Float) -> Void,
         onFire: @escaping @MainActor () -> Void
     ) {
-        let baseMinutes: Int
-        if case .countdown = mode {
-            baseMinutes = max(1, Int(ceil(Double(remainingSeconds) / 60.0)))
-        } else {
-            baseMinutes = 0
-        }
+        guard case .countdown(let deadline) = mode else { return }
+        let liveRemaining = Self.computeRemainingSeconds(deadline: deadline, now: now)
+        let baseMinutes = liveRemaining > 0 ? max(1, Int(ceil(Double(liveRemaining) / 60.0))) : 0
         let target = min(180, max(1, baseMinutes + delta))
         startCountdown(minutes: target, now: now, onFadeFactor: onFadeFactor, onFire: onFire)
     }

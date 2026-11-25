@@ -88,8 +88,8 @@ struct DSDiscoverRankAndSortTests {
         #expect(tyRankUntouched == "tingyou:rank:hot#1")
     }
 
-    @Test("BundledSourceSeeder.seedVersionTag 与内置书源包 v5.6.10 同步以触发覆盖升级")
+    @Test("BundledSourceSeeder.seedVersionTag 与内置书源包 v5.6.13 同步以触发覆盖升级")
     func bundledSeederVersionMatchesLatestArchive() {
-        #expect(BundledSourceSeeder.seedVersionTag == "v5.6.10-v3")
+        #expect(BundledSourceSeeder.seedVersionTag == "v5.6.13-v3")
     }
 }

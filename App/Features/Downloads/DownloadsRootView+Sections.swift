@@ -235,11 +235,20 @@ extension DownloadsRootView {
                     Button {
                         router.push(.bookDownloadDetail(bookID: sum.id, bookTitle: sum.bookTitle))
                     } label: {
-                        HStack {
+                        HStack(spacing: DSSpacing.sm) {
+                            DSCover(
+                                url: sum.coverURL,
+                                title: sum.bookTitle,
+                                pipeline: container.coverPipeline,
+                                side: 46,
+                                showsBorder: true,
+                                showsSoftShadow: false
+                            )
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(sum.bookTitle)
                                     .font(DSTypography.rowTitle)
                                     .foregroundStyle(DSColors.inkPrimary)
+                                    .lineLimit(1)
                                 HStack(spacing: DSSpacing.xs) {
                                     Text("已下载 \(sum.completedCount) 章 · \(formatBytes(sum.totalBytes))")
                                         .font(DSTypography.numericCaption)

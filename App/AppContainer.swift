@@ -181,7 +181,7 @@ final class AppContainer {
         )
         self.coverPipeline = CoverImagePipeline()
         self.banner = DSBannerCoordinator()
-        self.router = AppRouter()
+        self.router = AppRouter(initialTab: settings.defaultLaunchTab == .discover ? .discover : .library)
 
         if result.isDegradedInMemory, let errDesc = result.startupErrorDescription {
             let logStore = self.logger
@@ -198,13 +198,11 @@ final class AppContainer {
 
     /// 同步用户偏好至播放与下载引擎（UI-02/AUD-55：彻底消除假开关，解析器加载前仅临时夹紧播放音质）
     func syncSettingsToEngines() {
+        DSColors.setAccentTheme(settings.accentTheme)
         playback.playbackRate = settings.playbackRate
         let allowUltraHigh = hasLoadedBuiltinParsers && canUseUltraHighQuality
-        if let activeBook = playback.currentBook {
-            playback.preferredQuality = resolvedQuality(for: activeBook)
-        } else {
-            playback.preferredQuality = (!allowUltraHigh && settings.preferredQuality == .high) ? .standard : settings.preferredQuality
-        }
+        let fallbackQuality: AudioQualityTier = (!allowUltraHigh && settings.preferredQuality == .high) ? .standard : settings.preferredQuality
+        playback.preferredQuality = playback.currentBook.map { resolvedQuality(for: $0) } ?? fallbackQuality
         playback.allowUltraHighQuality = allowUltraHigh
         downloads.allowUltraHighQuality = allowUltraHigh
         playback.autoPlayNextChapter = settings.autoPlayNextChapter
@@ -214,6 +212,15 @@ final class AppContainer {
             maxManualConcurrent: settings.maxConcurrentDownloads,
             isOnWiFi: networkMonitor.isOnWiFi
         )
+        downloads.dynamicPrecacheCapBytes = settings.autoCacheCleanupEnabled
+            ? Int64(settings.cacheLimitMB) * 1024 * 1024
+            : Int64(2000) * 1024 * 1024
+        if downloads.onPrecacheCompleted == nil {
+            downloads.onPrecacheCompleted = { [weak self] in
+                guard let self else { return }
+                _ = await StorageCachePolicyEngine.enforceLimitIfNeeded(container: self)
+            }
+        }
     }
 
     func ensureDownloadsBootstrappedIfNeeded() async {
@@ -272,6 +279,7 @@ final class AppContainer {
         await networkMonitor.waitForInitialPath(timeoutSeconds: 0.5)
         syncSettingsToEngines()
         await ensureDownloadsBootstrappedIfNeeded()
+        syncProtectedChapterCacheBookIDs()
         playback.prewarmRestoredSessionIfNeeded()
     }
 
@@ -304,6 +312,7 @@ final class AppContainer {
             if let self {
                 await self.playback.flushProgressForBackgroundAsync()
                 await self.listeningStats.flushToDiskAsync()
+                _ = await StorageCachePolicyEngine.enforceLimitIfNeeded(container: self)
             }
             if !Task.isCancelled { _ = try? await store.pruneOldChapterProgress(keepLatestPerBook: 500) }
             if !Task.isCancelled { _ = try? await backup.createBackupIfNeeded(minIntervalSeconds: 86_400) }

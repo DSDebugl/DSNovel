@@ -65,8 +65,7 @@ struct HotBooksSection: View {
     }
 
     private func hotBookRow(rank: Int, book: BookSummaryDTO) -> some View {
-        let rawNarrator = book.narrator.trimmingCharacters(in: .whitespacesAndNewlines)
-        let narrator = rawNarrator.isEmpty ? book.author.trimmingCharacters(in: .whitespacesAndNewlines) : rawNarrator
+        let narrator = DSMetadataSanitizer.displayNarratorOrAuthor(author: book.author, narrator: book.narrator)
         let sourceName = book.sourceName.trimmingCharacters(in: .whitespacesAndNewlines)
 
         return HStack(spacing: DSSpacing.sm) {

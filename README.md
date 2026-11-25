@@ -1,6 +1,6 @@
-# DSNovel v3.0（绿地全量重写）
+# DSNovel v3.3.9（绿地全量重写）
 
-DSNovel v3.0 基于 **Swift 6.0 严格并发 + XcodeGen + 6 个本地 Swift Package（零外部 SPM 依赖）+ 纯 iPhone 竖屏 Liquid Glass UI** 全量重写，固化了 v2.8 b1–b105 与 GitHub Actions 自签 IPA 的全部 12 条实战经验教训。
+DSNovel v3.3.9 基于 **Swift 6.0 严格并发 + XcodeGen + 6 个本地 Swift Package（零外部 SPM 依赖）+ 纯 iPhone 竖屏 Liquid Glass UI** 全量重写，固化了 v2.8 b1–b105 与 GitHub Actions 自签 IPA 的全部 12 条实战经验教训。
 
 ## 架构分层（单向依赖 DAG）
 1. `DSCore`：DTO、强类型状态机（`PlaybackState` / `DownloadState`）、密码学/CRC-32、严格 `ZIPArchiveReader`、`DSDiagnosticLogStore` 与冻结协议。
@@ -15,4 +15,4 @@ DSNovel v3.0 基于 **Swift 6.0 严格并发 + XcodeGen + 6 个本地 Swift Pack
 1. `scripts/verify_rules.sh`（22 条静态门禁，零豁免，含单文件 ≤400 行）
 2. `ep_selfcheck.js`（27/27）+ `ep_fuzz.js` + 内置 JS 语法与无 BOM 校验
 3. `xcodegen generate` + `xcodebuild test`（6 个本地 SPM 包 + 主 App iOS 模拟器单测与 UI 冒烟测试）
-4. `xcodebuild build`（`-configuration Release -sdk iphoneos`，无证书禁签参数）+ 8 项必含资源及二进制/压缩包完整性校验（缺失即 `exit 1`）+ 产出 `DSNovel-v3.0.0-b<N>.ipa`（独立 Bundle ID `com.dsnovel.v3`，可与 v2.8 同机并存测试）。
+4. `xcodebuild build`（`-configuration Release -sdk iphoneos`，无证书禁签参数）+ 8 项必含资源及二进制/压缩包完整性校验（缺失即 `exit 1`）+ 产出 `DSNovel-v3.3.9-b<N>.ipa`（Bundle ID：`com.dsnovel.app`）。

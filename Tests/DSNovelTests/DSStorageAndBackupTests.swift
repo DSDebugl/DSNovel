@@ -63,7 +63,8 @@ final class DSStorageAndBackupTests: XCTestCase {
             .appendingPathComponent("\(DSCrypto.sha256Hex("book-magic")).dscache")
         try Data("BROKEN_NO_MAGIC_PAYLOAD".utf8).write(to: cacheFile)
 
-        let afterCorrupt = await store.loadChapters(bookID: "book-magic")
+        let reloadedStore = ChapterCacheStore(baseDirectory: tempDir)
+        let afterCorrupt = await reloadedStore.loadChapters(bookID: "book-magic")
         XCTAssertNil(afterCorrupt)
         XCTAssertFalse(FileManager.default.fileExists(atPath: cacheFile.path))
     }

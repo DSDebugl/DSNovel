@@ -5,9 +5,7 @@ import SwiftUI
 /// 发现页专属书籍展示数据整理（与搜索/书架解耦，统一书名、可点主播、连载状态与书架丝带）
 enum DiscoverBookDisplayHelper {
     static func narratorText(for book: BookSummaryDTO) -> String {
-        let n = book.narrator.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !n.isEmpty { return n }
-        return book.author.trimmingCharacters(in: .whitespacesAndNewlines)
+        DSMetadataSanitizer.displayNarratorOrAuthor(author: book.author, narrator: book.narrator)
     }
 
     static func statusLine(for book: BookSummaryDTO) -> String {

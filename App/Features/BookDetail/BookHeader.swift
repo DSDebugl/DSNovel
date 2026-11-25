@@ -87,50 +87,62 @@ struct BookHeader: View {
                         .padding(.top, 3)
                 }
 
-                Spacer(minLength: DSSpacing.xs)
+                Spacer(minLength: 6)
 
-                if !target.isEmpty {
-                    Button {
-                        onTapNarrator(target)
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "mic.fill")
-                                .font(DSTypography.caption2)
-                            Text(label.isEmpty ? target : label)
-                                .lineLimit(1)
-                            Image(systemName: "chevron.right")
-                                .font(DSTypography.caption2)
+                if !target.isEmpty || !sourceName.isEmpty || cleanStatusTag != nil {
+                    HStack(spacing: 6) {
+                        if !target.isEmpty {
+                            narratorButton(target: target, label: label)
                         }
-                        .font(DSTypography.caption.weight(.semibold))
-                        .foregroundStyle(DSColors.accent)
-                        .padding(.horizontal, DSSpacing.xs + 2)
-                        .frame(minHeight: 26)
-                        .background(Capsule().fill(DSColors.accent.opacity(0.14)))
-                        .contentShape(Capsule())
+                        if !sourceName.isEmpty {
+                            sourcePill
+                        }
+                        if let status = cleanStatusTag {
+                            DSBadge(status, style: .neutral)
+                                .fixedSize(horizontal: true, vertical: false)
+                                .layoutPriority(1)
+                        }
                     }
-                    .buttonStyle(.plain)
-                    .padding(.top, DSSpacing.xs)
-                    .accessibilityLabel("搜索演播人 \(target)")
+                    .padding(.top, 6)
                 }
-
-                HStack(spacing: DSSpacing.xs) {
-                    if !sourceName.isEmpty {
-                        DSSourceBadge(
-                            name: sourceName,
-                            health: .untested,
-                            latencyMs: nil,
-                            showHealthAndLatency: false
-                        )
-                        .layoutPriority(1)
-                    }
-                    if let status = cleanStatusTag {
-                        DSBadge(status, style: .neutral)
-                    }
-                }
-                .padding(.top, DSSpacing.xs)
             }
             .frame(maxWidth: .infinity, minHeight: Self.coverSide, alignment: .topLeading)
         }
         .padding(.horizontal, DSSpacing.pageHorizontal)
+    }
+
+    private func narratorButton(target: String, label: String) -> some View {
+        Button {
+            onTapNarrator(target)
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "mic.fill")
+                    .font(DSTypography.caption2)
+                Text(label.isEmpty ? target : label)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Image(systemName: "chevron.right")
+                    .font(DSTypography.caption2)
+            }
+            .font(DSTypography.caption.weight(.semibold))
+            .foregroundStyle(DSColors.accent)
+            .padding(.horizontal, DSSpacing.xs + 2)
+            .frame(minHeight: 26)
+            .background(Capsule().fill(DSColors.accent.opacity(0.14)))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("搜索演播人 \(target)")
+    }
+
+    private var sourcePill: some View {
+        DSSourceBadge(
+            name: sourceName,
+            health: .untested,
+            latencyMs: nil,
+            showHealthAndLatency: false
+        )
+        .fixedSize(horizontal: true, vertical: false)
+        .layoutPriority(2)
     }
 }

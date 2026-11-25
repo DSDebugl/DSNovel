@@ -169,6 +169,9 @@ extension PlaybackCoordinator {
 
                 let asset = AVURLAsset(url: stream.url, options: stream.headers.isEmpty ? nil : ["AVURLAssetHTTPHeaderFieldsKey": stream.headers])
                 let item = AVPlayerItem(asset: asset)
+                if !stream.isHLS {
+                    item.audioTimePitchAlgorithm = .timeDomain
+                }
                 let bufferTier = stream.qualityTier == .auto ? resolvedQuality : stream.qualityTier
                 item.preferredForwardBufferDuration = Self.forwardBufferDuration(for: bufferTier, isOnWiFi: self.isOnWiFi)
                 self.dsp.prepareForStream(

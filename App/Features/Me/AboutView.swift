@@ -29,7 +29,7 @@ struct AboutView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: DSSpacing.md) {
+            VStack(spacing: 22) {
                 brandHeroHeader
 
                 infoCard
@@ -40,7 +40,7 @@ struct AboutView: View {
                     .font(DSTypography.numericFootnote)
                     .foregroundStyle(DSColors.inkSecondary.opacity(0.72))
                     .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.top, DSSpacing.sm)
+                    .padding(.top, 20)
             }
             .padding(.horizontal, DSSpacing.pageHorizontal)
             .padding(.top, DSSpacing.xs)
@@ -85,7 +85,7 @@ struct AboutView: View {
             Image("AppIconPreview")
                 .resizable()
                 .scaledToFill()
-                .frame(width: 72, height: 72)
+                .frame(width: 88, height: 88)
                 .clipShape(RoundedRectangle(cornerRadius: DSRadius.card, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: DSRadius.card, style: .continuous)
@@ -104,8 +104,8 @@ struct AboutView: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .padding(.top, DSSpacing.sm)
-        .padding(.bottom, DSSpacing.xs)
+        .padding(.top, 20)
+        .padding(.bottom, 8)
     }
 
     private var infoCard: some View {
@@ -127,7 +127,7 @@ struct AboutView: View {
                         .lineLimit(1)
                 }
                 .padding(.horizontal, DSSpacing.s5)
-                .frame(minHeight: 48)
+                .frame(minHeight: 56)
                 .accessibilityElement(children: .combine)
 
                 insetDivider
@@ -151,7 +151,7 @@ struct AboutView: View {
                             .foregroundStyle(DSColors.inkSecondary.opacity(0.70))
                     }
                     .padding(.horizontal, DSSpacing.s5)
-                    .frame(minHeight: 48)
+                    .frame(minHeight: 56)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -167,19 +167,17 @@ struct AboutView: View {
                             tint: DSColors.inkSecondary,
                             background: DSColors.inkSecondary.opacity(0.12)
                         )
-                        HStack(spacing: DSSpacing.xs) {
-                            Text("版本号")
-                                .font(DSTypography.subheadline)
-                                .foregroundStyle(DSColors.inkPrimary)
-                            Text(AuthorInfo.appVersionDisplay)
-                                .font(DSTypography.numericFootnote)
-                                .foregroundStyle(DSColors.inkSecondary)
-                                .lineLimit(1)
-                        }
+                        Text("版本号")
+                            .font(DSTypography.subheadline)
+                            .foregroundStyle(DSColors.inkPrimary)
                         Spacer(minLength: 8)
+                        Text(AuthorInfo.appVersionDisplay)
+                            .font(DSTypography.numericFootnote)
+                            .foregroundStyle(DSColors.inkSecondary)
+                            .lineLimit(1)
                     }
                     .padding(.horizontal, DSSpacing.s5)
-                    .frame(minHeight: 48)
+                    .frame(minHeight: 56)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(SilentVersionRowButtonStyle())
@@ -208,7 +206,7 @@ struct AboutView: View {
                         Spacer(minLength: 8)
                     }
                     .padding(.horizontal, DSSpacing.s5)
-                    .frame(minHeight: 48)
+                    .frame(minHeight: 56)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)

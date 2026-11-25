@@ -6,7 +6,7 @@ import SwiftData
 /// 统一后台持久化 Actor（@ModelActor 串行隔离，零主线程数据库 I/O）
 @ModelActor
 public actor PersistenceEngine: PlaybackProgressPersisting {
-    private static let logger = Logger(subsystem: "com.dsnovel.app", category: DSLogCategory.storage.rawValue)
+    internal static let logger = Logger(subsystem: "com.dsnovel.app", category: DSLogCategory.storage.rawValue)
 
     /// 在后台队列构造 @ModelActor，确保 DefaultSerialModelExecutor 绝不绑定到主线程
     public static func makeOffMain(modelContainer: ModelContainer) -> PersistenceEngine {
@@ -229,15 +229,25 @@ public actor PersistenceEngine: PlaybackProgressPersisting {
         let key = "\(bookID)::\(chapterID)"
         var desc = FetchDescriptor<ChapterProgressEntity>(predicate: #Predicate { $0.compositeKey == key })
         desc.fetchLimit = 1
-        guard let item = try? modelContext.fetch(desc).first else { return nil }
-        return (item.positionMs, item.durationMs, item.isFinished)
+        do {
+            guard let item = try modelContext.fetch(desc).first else { return nil }
+            return (item.positionMs, item.durationMs, item.isFinished)
+        } catch {
+            Self.logger.error("loadChapterProgress failed for book=\(bookID, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
     }
 
     public func loadBookSkipConfig(bookID: String) async -> SkipConfigDTO {
         var desc = FetchDescriptor<BookEntity>(predicate: #Predicate { $0.id == bookID })
         desc.fetchLimit = 1
-        guard let book = try? modelContext.fetch(desc).first else { return SkipConfigDTO() }
-        return SkipConfigDTO(introSeconds: book.skipIntroSeconds, outroSeconds: book.skipOutroSeconds)
+        do {
+            guard let book = try modelContext.fetch(desc).first else { return SkipConfigDTO() }
+            return SkipConfigDTO(introSeconds: book.skipIntroSeconds, outroSeconds: book.skipOutroSeconds)
+        } catch {
+            Self.logger.error("loadBookSkipConfig failed for book=\(bookID, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            return SkipConfigDTO()
+        }
     }
 
     public func saveBookSkipConfig(bookID: String, config: SkipConfigDTO) async {

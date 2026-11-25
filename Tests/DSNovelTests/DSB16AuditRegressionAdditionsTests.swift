@@ -114,11 +114,11 @@ final class DSB16AuditRegressionAdditionsTests: XCTestCase {
         XCTAssertFalse(container.playback.allowUltraHighQuality)
         XCTAssertFalse(container.downloads.allowUltraHighQuality)
 
-        // 加载完成后若无已启用的内置解析器，则将超清偏好钳制回高清(.standard)
+        // 加载完成后若无已启用的内置解析器，保留用户存储的 .high 偏好，但引擎侧门控保持关闭并回退高清(.standard)
         await container.refreshBuiltinParserActiveState()
         XCTAssertFalse(container.hasActiveBuiltinParser)
         XCTAssertFalse(container.canUseUltraHighQuality)
-        XCTAssertEqual(container.settings.preferredQuality, .standard)
+        XCTAssertEqual(container.settings.preferredQuality, .high)
         XCTAssertEqual(container.playback.preferredQuality, .standard)
 
         // P1-09：inMemoryOnly 模式下修改各项偏好不得污染 UserDefaults.standard

@@ -126,7 +126,7 @@ public enum DownloadState: String, Codable, Sendable, Equatable, CaseIterable {
     }
 }
 
-/// 指数退避策略计算器（L-IOS-2：2s / 6s，429/503 加倍，最大 3 次重试）
+/// 指数退避策略计算器（L-IOS-2：2s / 6s / 14s，429/503 加倍，最大 3 次重试）
 public struct DownloadRetryPolicy: Sendable, Equatable {
     public static let maxRetries = 3
 

@@ -13,6 +13,7 @@ enum DownloadsDataHelper {
     struct BookDownloadSummary: Identifiable, Equatable, Sendable {
         let id: String
         let bookTitle: String
+        let coverURL: String
         let completedCount: Int
         let activeCount: Int
         let failedCount: Int
@@ -124,11 +125,13 @@ enum DownloadsDataHelper {
                 }
             }
             guard completed > 0 || active > 0 || failed > 0 else { continue }
-            let title = items.first?.bookTitle ?? bookID
+            let title = items.first(where: { !$0.bookTitle.isEmpty })?.bookTitle ?? bookID
+            let cover = items.first(where: { !$0.coverURL.isEmpty })?.coverURL ?? ""
             list.append(
                 BookDownloadSummary(
                     id: bookID,
                     bookTitle: title,
+                    coverURL: cover,
                     completedCount: completed,
                     activeCount: active,
                     failedCount: failed,

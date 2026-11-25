@@ -63,7 +63,14 @@ extension AppContainer {
         }
     }
 
+    func syncProtectedChapterCacheBookIDs() {
+        let ids = StorageCachePolicyEngine.protectedChapterBookIDs(container: self)
+        let cache = chapterCache
+        Task { await cache.updateProtectedBookIDs(ids) }
+    }
+
     func handlePrecacheRequest(book: BookSummaryDTO, upcomingChapters: [ChapterDTO]) {
+        syncProtectedChapterCacheBookIDs()
         let count = settings.precacheNextCount
         let currentIndex = playback.currentChapterIndex
         let quality = resolvedQuality(for: book)

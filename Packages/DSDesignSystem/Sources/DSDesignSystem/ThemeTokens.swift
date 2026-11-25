@@ -1,3 +1,5 @@
+import DSCore
+import os
 import SwiftUI
 import UIKit
 
@@ -7,6 +9,10 @@ private struct DSNightDimEnabledKey: EnvironmentKey {
 
 private struct DSReduceMotionKey: EnvironmentKey {
     static let defaultValue: Bool = false
+}
+
+private struct DSAccentThemeKey: EnvironmentKey {
+    static let defaultValue: DSAccentTheme = .terracotta
 }
 
 public extension EnvironmentValues {
@@ -22,6 +28,11 @@ public extension EnvironmentValues {
 
     var dsEffectiveReduceMotion: Bool {
         accessibilityReduceMotion || dsReduceMotion
+    }
+
+    var dsAccentTheme: DSAccentTheme {
+        get { self[DSAccentThemeKey.self] }
+        set { self[DSAccentThemeKey.self] = newValue }
     }
 }
 
@@ -48,8 +59,77 @@ public enum DSColors {
         Color(name, bundle: .main)
     }
 
+    private struct AccentSpec: Sendable {
+        let light: RGB
+        let dark: RGB
+        let nightDim: RGB
+    }
+
+    private static let accentThemeLock = OSAllocatedUnfairLock<DSAccentTheme>(initialState: .terracotta)
+
+    public static func setAccentTheme(_ theme: DSAccentTheme) {
+        accentThemeLock.withLock { $0 = theme }
+    }
+
+    public static var currentAccentTheme: DSAccentTheme {
+        accentThemeLock.withLock { $0 }
+    }
+
+    private static func accentSpec(for theme: DSAccentTheme) -> AccentSpec {
+        switch theme {
+        case .terracotta:
+            return AccentSpec(
+                light: RGB(r: 0xC4 / 255.0, g: 0x54 / 255.0, b: 0x1F / 255.0),
+                dark: RGB(r: 0xFF / 255.0, g: 0x8A / 255.0, b: 0x4C / 255.0),
+                nightDim: RGB(r: 0xE5 / 255.0, g: 0x7E / 255.0, b: 0x47 / 255.0)
+            )
+        case .neteaseRed:
+            return AccentSpec(
+                light: RGB(r: 0xD4 / 255.0, g: 0x3C / 255.0, b: 0x33 / 255.0),
+                dark: RGB(r: 0xEC / 255.0, g: 0x4F / 255.0, b: 0x46 / 255.0),
+                nightDim: RGB(r: 0xD4 / 255.0, g: 0x48 / 255.0, b: 0x40 / 255.0)
+            )
+        case .teal:
+            return AccentSpec(
+                light: RGB(r: 0x0F / 255.0, g: 0x76 / 255.0, b: 0x6E / 255.0),
+                dark: RGB(r: 0x2D / 255.0, g: 0xD4 / 255.0, b: 0xBF / 255.0),
+                nightDim: RGB(r: 0x26 / 255.0, g: 0xB8 / 255.0, b: 0xA6 / 255.0)
+            )
+        case .skyBlue:
+            return AccentSpec(
+                light: RGB(r: 0x1D / 255.0, g: 0x63 / 255.0, b: 0xD8 / 255.0),
+                dark: RGB(r: 0x5C / 255.0, g: 0xA2 / 255.0, b: 0xFF / 255.0),
+                nightDim: RGB(r: 0x4E / 255.0, g: 0x8C / 255.0, b: 0xE0 / 255.0)
+            )
+        case .amber:
+            return AccentSpec(
+                light: RGB(r: 0xB4 / 255.0, g: 0x53 / 255.0, b: 0x09 / 255.0),
+                dark: RGB(r: 0xF5 / 255.0, g: 0xB0 / 255.0, b: 0x41 / 255.0),
+                nightDim: RGB(r: 0xDA / 255.0, g: 0x9C / 255.0, b: 0x3A / 255.0)
+            )
+        case .violet:
+            return AccentSpec(
+                light: RGB(r: 0x6D / 255.0, g: 0x28 / 255.0, b: 0xD9 / 255.0),
+                dark: RGB(r: 0xA7 / 255.0, g: 0x8B / 255.0, b: 0xFA / 255.0),
+                nightDim: RGB(r: 0x94 / 255.0, g: 0x7B / 255.0, b: 0xE0 / 255.0)
+            )
+        }
+    }
+
+    public static func accent(for theme: DSAccentTheme) -> Color {
+        let spec = accentSpec(for: theme)
+        return dynamicColor(light: spec.light, dark: spec.dark)
+    }
+
+    public static func accentSwatch(for theme: DSAccentTheme) -> Color {
+        let spec = accentSpec(for: theme)
+        return dynamicColor(light: spec.light, dark: spec.dark)
+    }
+
     // MARK: - v3.0 语义色彩（全量保留）
-    public static let accent = mainAssetColor("AccentColor")
+    public static var accent: Color {
+        accent(for: currentAccentTheme)
+    }
     public static let onAccent = mainAssetColor("OnAccent")
     public static let surfaceBase = mainAssetColor("SurfaceBase")
     public static let surfaceCard = mainAssetColor("SurfaceCard")
@@ -83,7 +163,10 @@ public enum DSColors {
     public static let surfaceBaseNightDim: Color = dynamicColor(light: surfaceBaseLightRGB, dark: surfaceBaseNightDimRGB)
     public static let surfaceGroupedNightDim: Color = dynamicColor(light: surfaceGroupedLightRGB, dark: surfaceGroupedNightDimRGB)
     public static let surfaceCardNightDim: Color = dynamicColor(light: surfaceCardLightRGB, dark: surfaceCardNightDimRGB)
-    public static let accentNightDim: Color = dynamicColor(light: accentLightRGB, dark: accentNightDimRGB)
+    public static var accentNightDim: Color {
+        let spec = accentSpec(for: currentAccentTheme)
+        return dynamicColor(light: spec.light, dark: spec.nightDim)
+    }
 
     public static func resolvedSurfaceBase(nightDim: Bool) -> Color {
         nightDim ? surfaceBaseNightDim : surfaceBase

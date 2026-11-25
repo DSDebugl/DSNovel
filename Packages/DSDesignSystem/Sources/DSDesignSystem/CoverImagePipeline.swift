@@ -3,53 +3,6 @@ import Foundation
 import ImageIO
 import UIKit
 
-/// 串行磁盘读写与 LRU 裁剪执行器（AUD-59：消除并发写盘/裁剪竞争，并在写入前复核代际）
-private actor CoverDiskWriter {
-    func writeAndPrune(
-        data: Data,
-        to url: URL,
-        dir: URL,
-        maxBytes: Int,
-        shouldPrune: Bool,
-        isEpochValid: @Sendable () async -> Bool
-    ) async {
-        guard await isEpochValid() else { return }
-        let fm = FileManager.default
-        try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
-        guard await isEpochValid() else { return }
-        try? data.write(to: url, options: [.atomic])
-        guard shouldPrune, await isEpochValid() else { return }
-        guard let files = try? fm.contentsOfDirectory(
-            at: dir,
-            includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey],
-            options: [.skipsHiddenFiles]
-        ) else { return }
-
-        var entries: [(url: URL, date: Date, size: Int)] = []
-        var totalSize = 0
-        for file in files {
-            let vals = try? file.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
-            let size = vals?.fileSize ?? 0
-            let date = vals?.contentModificationDate ?? .distantPast
-            totalSize += size
-            entries.append((file, date, size))
-        }
-        guard totalSize > maxBytes else { return }
-        let targetBytes = Int(Double(maxBytes) * 0.8)
-        for item in entries.sorted(by: { $0.date < $1.date }) {
-            if totalSize <= targetBytes { break }
-            try? fm.removeItem(at: item.url)
-            totalSize -= item.size
-        }
-    }
-
-    func clearDirectory(_ dir: URL) {
-        let fm = FileManager.default
-        try? fm.removeItem(at: dir)
-        try? fm.createDirectory(at: dir, withIntermediateDirectories: true)
-    }
-}
-
 /// 封面图片异步管线（UI-07/AUD-24/AUD-25/AUD-59/AUD-95：订阅者计数取消 + HTTP(S) 与 10MB 限额 + 串行代际磁盘 I/O + 负缓存上限）
 public actor CoverImagePipeline {
     private struct InflightEntry {
@@ -172,6 +125,10 @@ public actor CoverImagePipeline {
     }
 
     public func clearNegativeCache() { negativeCache.removeAll() }
+
+    public func trimDiskCache(toMaxBytes maxBytes: Int64) async {
+        await diskWriter.trimToMaxBytes(diskDir, maxBytes: maxBytes)
+    }
 
     public func clearAll() async {
         cacheEpoch &+= 1

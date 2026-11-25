@@ -14,9 +14,10 @@ extension StoragePrefsView {
 
     func computeBreakdownSegments(totalWidth: CGFloat, spacing: CGFloat) -> [BreakdownSegment] {
         var raw: [(Int, Int64, Color)] = []
-        if offlineTotalBytes > 0 { raw.append((0, offlineTotalBytes, DSColors.accent)) }
-        if coverCacheBytes > 0 { raw.append((1, coverCacheBytes, Color.blue)) }
-        if chapterCacheBytes > 0 { raw.append((2, chapterCacheBytes, DSColors.inkSecondary.opacity(0.65))) }
+        if manualAudioBytes > 0 { raw.append((0, manualAudioBytes, DSColors.accent)) }
+        if precacheBytes > 0 { raw.append((1, precacheBytes, DSColors.warning)) }
+        if coverCacheBytes > 0 { raw.append((2, coverCacheBytes, Color.blue)) }
+        if chapterCacheBytes > 0 { raw.append((3, chapterCacheBytes, DSColors.inkSecondary.opacity(0.65))) }
         guard !raw.isEmpty else { return [] }
         let totalGap = CGFloat(max(0, raw.count - 1)) * spacing
         let usable = max(0, totalWidth - totalGap)
@@ -64,11 +65,7 @@ extension StoragePrefsView {
         manualAudioBytes = DownloadsDataHelper.manualCompletedBytes(from: records)
         freeDiskBytes = DownloadsDataHelper.freeDiskBytes()
 
-        if let precacheRecords = try? await container.persistence.fetchDownloads(kind: .precache, limit: 500) {
-            precacheBytes = precacheRecords.reduce(Int64(0)) { $0 + max(0, $1.totalBytes) }
-        } else {
-            precacheBytes = 0
-        }
+        precacheBytes = await StorageCachePolicyEngine.currentPrecacheBytes(container: container)
 
         async let cover = container.coverPipeline.diskUsageBytes()
         async let chapter = container.chapterCache.diskUsageBytes()
@@ -76,12 +73,20 @@ extension StoragePrefsView {
         chapterCacheBytes = await chapter
     }
 
-    private func protectedChapterCacheBookIDs() -> Set<String> {
-        var ids = Set(downloads.manualRecords.filter { $0.state == .completed }.map(\.bookID))
-        if let activeID = container.playback.currentBook?.id {
-            ids.insert(activeID)
+    func scheduleLimitEnforcement() {
+        hasPendingLimitEnforcement = true
+        limitEvaluateTask?.cancel()
+        limitEvaluateTask = Task {
+            try? await Task.sleep(for: .milliseconds(450))
+            guard !Task.isCancelled else { return }
+            hasPendingLimitEnforcement = false
+            let trimmed = await StorageCachePolicyEngine.enforceLimitIfNeeded(container: container)
+            if trimmed {
+                await refreshStorageStats()
+                DSHaptics.selection()
+                banner.show("已按上限自动清理最久缓存", tone: .info)
+            }
         }
-        return ids
     }
 
     func clearPrecacheOnly() async {
@@ -109,7 +114,8 @@ extension StoragePrefsView {
         guard !isClearingCache else { return }
         isClearingCache = true
         defer { isClearingCache = false }
-        await container.chapterCache.clearAll(preservingBookIDs: protectedChapterCacheBookIDs())
+        let protected = StorageCachePolicyEngine.protectedChapterBookIDs(container: container)
+        await container.chapterCache.clearAll(preservingBookIDs: protected)
         await refreshStorageStats()
         DSHaptics.selection()
         banner.show("已清理章节目录缓存", tone: .success)
@@ -122,7 +128,8 @@ extension StoragePrefsView {
         await downloads.clearAllPrecache()
         await container.coverPipeline.clearAll()
         CoverAmbientColor.clearCache()
-        await container.chapterCache.clearAll(preservingBookIDs: protectedChapterCacheBookIDs())
+        let protected = StorageCachePolicyEngine.protectedChapterBookIDs(container: container)
+        await container.chapterCache.clearAll(preservingBookIDs: protected)
         await refreshStorageStats()
         DSHaptics.selection()
         banner.show("已清理全部缓存", tone: .success)

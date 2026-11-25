@@ -73,6 +73,7 @@ final class DSNovelV3SmokeUITests: XCTestCase {
         meTab.tap()
         XCTAssertTrue(
             app.otherElements["me_root"].waitForExistence(timeout: 5)
+                || app.scrollViews["me_root"].waitForExistence(timeout: 2)
                 || app.tables["me_root"].waitForExistence(timeout: 2)
                 || app.collectionViews["me_root"].waitForExistence(timeout: 2),
             "切换至我的页后 me_root 应存在"
@@ -119,7 +120,7 @@ final class DSNovelV3SmokeUITests: XCTestCase {
         }
         XCTAssertTrue(
             app.navigationBars["下载管理"].waitForExistence(timeout: 5)
-                && app.staticTexts["存储概览"].waitForExistence(timeout: 3),
+                && app.staticTexts["离线已下载"].waitForExistence(timeout: 3),
             "点击存储管理中的下载管理入口后应进入下载管理页面并展示存储概览卡片"
         )
     }
@@ -135,6 +136,7 @@ final class DSNovelV3SmokeUITests: XCTestCase {
         meTab.tap()
         XCTAssertTrue(
             app.otherElements["me_root"].waitForExistence(timeout: 5)
+                || app.scrollViews["me_root"].waitForExistence(timeout: 2)
                 || app.tables["me_root"].waitForExistence(timeout: 2)
                 || app.collectionViews["me_root"].waitForExistence(timeout: 2),
             "切换至我的页后 me_root 应存在"
@@ -218,6 +220,9 @@ final class DSNovelV3SmokeUITests: XCTestCase {
 
         let parserByID = app.buttons["ximalaya_audio_parser_entry"].firstMatch
         let parserText = app.staticTexts["音频解析"].firstMatch
+        if !parserByID.exists && !parserText.exists {
+            app.swipeUp()
+        }
         XCTAssertTrue(
             parserByID.waitForExistence(timeout: 5) || parserText.waitForExistence(timeout: 2),
             "三连击解锁后喜马拉雅书源详情页应展示唯一音频解析入口"
@@ -245,5 +250,27 @@ final class DSNovelV3SmokeUITests: XCTestCase {
             app.staticTexts["常用倍速"].waitForExistence(timeout: 5),
             "点击倍速按钮后应展开统一暗色卡片风格的倍速调节弹窗"
         )
+    }
+
+    @MainActor
+    func testAppearanceThemeSwatchesAndDefaultLaunchTab() {
+        let app = XCUIApplication()
+        app.launchArguments = ["DSNOVEL_UITEST", "DSNOVEL_UITEST_RESET"]
+        app.launch()
+
+        let meTab = app.buttons["tab_me"]
+        XCTAssertTrue(meTab.waitForExistence(timeout: 5), "底部导航栏应展示设置 Tab")
+        meTab.tap()
+
+        let neteaseRedSwatch = app.buttons["主题色 网易红"].firstMatch
+        XCTAssertTrue(neteaseRedSwatch.waitForExistence(timeout: 5), "外观卡片应展示网易红主题色圆点")
+        neteaseRedSwatch.tap()
+
+        let discoverLaunchBtn = app.buttons["默认启动到首页"].firstMatch
+        for _ in 0..<2 where !(discoverLaunchBtn.exists && discoverLaunchBtn.isHittable) {
+            app.swipeUp()
+        }
+        XCTAssertTrue(discoverLaunchBtn.waitForExistence(timeout: 4), "系统卡片应展示启动默认页选项")
+        discoverLaunchBtn.tap()
     }
 }

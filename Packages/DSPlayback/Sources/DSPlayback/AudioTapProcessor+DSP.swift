@@ -6,6 +6,7 @@ import Foundation
 /// 实时 5 段 EQ + AI 智能修音 + 可调响度增强 + 防爆音动态均衡 DSP 参数快照（跨音频渲染线程只读传递）
 public struct AudioDSPParameters: Sendable, Equatable {
     public let bandGainsDB: [Float] // 100, 300, 1000, 3200, 8000 Hz
+    public let isCustomEQ: Bool
     public let stereoBalance: Float // -1.0 ... 1.0（保留兼容字段，默认 0）
     public let volumeBoostEnabled: Bool
     public let volumeBoostDB: Float // 0.0 ... 9.0 dB
@@ -16,6 +17,7 @@ public struct AudioDSPParameters: Sendable, Equatable {
 
     public init(
         bandGainsDB: [Float] = [0, 0, 0, 0, 0],
+        isCustomEQ: Bool = false,
         stereoBalance: Float = 0,
         volumeBoostEnabled: Bool = false,
         volumeBoostDB: Float = 0,
@@ -25,6 +27,7 @@ public struct AudioDSPParameters: Sendable, Equatable {
         fadeGain: Float = 1.0
     ) {
         self.bandGainsDB = bandGainsDB.count == 5 ? bandGainsDB : [0, 0, 0, 0, 0]
+        self.isCustomEQ = isCustomEQ
         self.stereoBalance = max(-1, min(1, stereoBalance))
         let resolvedDB: Float = volumeBoostDB > 0.01 ? min(9.0, max(0.0, volumeBoostDB)) : (volumeBoostEnabled ? 2.0 : 0.0)
         self.volumeBoostDB = resolvedDB
@@ -44,11 +47,12 @@ public struct AudioDSPParameters: Sendable, Equatable {
             || bandGainsDB.contains(where: { abs($0) > 0.05 })
     }
 
-    /// 合并静态风格 EQ 与 AI 智能修音动态偏移，并进行 [-10, +10] dB 联合安全限幅
+    /// 合并静态风格 EQ 与 AI 智能修音动态偏移（预设风格正向增益适度收敛以防同向过冲），并执行 [-10, +10] dB 联合限幅
     public static func combinedBandGains(
         staticBands: [Float],
         smartOffsets: [Float],
-        smartEnabled: Bool
+        smartEnabled: Bool,
+        isCustomEQ: Bool = false
     ) -> [Float] {
         guard smartEnabled, staticBands.count == 5, smartOffsets.count == 5 else {
             return staticBands.count == 5 ? staticBands : [0, 0, 0, 0, 0]
@@ -56,11 +60,26 @@ public struct AudioDSPParameters: Sendable, Equatable {
         var out: [Float] = []
         out.reserveCapacity(5)
         for i in 0..<5 {
-            let sum = staticBands[i] + smartOffsets[i]
+            let base = (!isCustomEQ && staticBands[i] > 0) ? (staticBands[i] * 0.85) : staticBands[i]
+            let sum = base + smartOffsets[i]
             let safe = sum.isFinite ? min(10.0, max(-10.0, sum)) : 0
             out.append(safe)
         }
         return out
+    }
+
+    /// EQ 正向能量自动电平补偿（保持切换音色风格或开启智能修音时主观响度平稳）
+    public static func eqMakeupLinearGain(for bands: [Float]) -> Float {
+        guard !bands.isEmpty else { return 1.0 }
+        let avgPositive = bands.reduce(Float(0)) { $0 + max(0, $1) } / Float(bands.count)
+        guard avgPositive > 0.05 else { return 1.0 }
+        let trimDB = max(-2.5, -0.35 * avgPositive)
+        return powf(10.0, trimDB / 20.0)
+    }
+
+    /// 防爆音动态均衡最大正向抬升上限随响度增强档位联动收敛，避免串联过推入软削波区
+    public static func maxDynamicUpGain(forVolumeBoostDB boostDB: Float) -> Float {
+        max(1.18, 2.0 - max(0, boostDB) * 0.08)
     }
 
     public static let centerFrequencies: [Double] = [100, 300, 1000, 3200, 8000]
@@ -130,7 +149,8 @@ extension AudioTapProcessor {
         levelingGain: inout Float
     ) -> Bool {
         let boostLinear: Float = params.volumeBoostDB > 0.05 ? powf(10.0, params.volumeBoostDB / 20.0) : 1.0
-        let baseGain = params.fadeGain * boostLinear
+        let eqTrim = AudioDSPParameters.eqMakeupLinearGain(for: params.bandGainsDB)
+        let baseGain = params.fadeGain * boostLinear * eqTrim
         let leftGain = baseGain * (params.stereoBalance > 0 ? (1.0 - params.stereoBalance) : 1.0)
         let rightGain = baseGain * (params.stereoBalance < 0 ? (1.0 + params.stereoBalance) : 1.0)
         let abl = UnsafeMutableAudioBufferListPointer(bufferListInOut)
@@ -153,7 +173,7 @@ extension AudioTapProcessor {
                     }
                 }
                 if params.dynamicLevelingEnabled && chIdx == 0 {
-                    updateDynamicLevelingGain(samples: samples, count: frames, stride: 1, currentGain: &levelingGain)
+                    updateDynamicLevelingGain(samples: samples, count: frames, stride: 1, maxUpGain: AudioDSPParameters.maxDynamicUpGain(forVolumeBoostDB: params.volumeBoostDB), currentGain: &levelingGain)
                 }
                 var gain = (isMono ? baseGain : ((chIdx == 0) ? leftGain : rightGain)) * (params.dynamicLevelingEnabled ? levelingGain : 1.0)
                 if abs(gain - 1.0) > 0.001 {
@@ -217,7 +237,8 @@ extension AudioTapProcessor {
         levelingGain: inout Float
     ) -> Bool {
         let boostLinear: Float = params.volumeBoostDB > 0.05 ? powf(10.0, params.volumeBoostDB / 20.0) : 1.0
-        let baseGain = params.fadeGain * boostLinear
+        let eqTrim = AudioDSPParameters.eqMakeupLinearGain(for: params.bandGainsDB)
+        let baseGain = params.fadeGain * boostLinear * eqTrim
         let isMono = channels == 1
         let leftGain = isMono ? baseGain : baseGain * (params.stereoBalance > 0 ? (1.0 - params.stereoBalance) : 1.0)
         let rightGain = baseGain * (params.stereoBalance < 0 ? (1.0 + params.stereoBalance) : 1.0)
@@ -232,7 +253,7 @@ extension AudioTapProcessor {
             }
         }
         if params.dynamicLevelingEnabled {
-            updateDynamicLevelingGain(samples: samples, count: frames, stride: Int(stride), currentGain: &levelingGain)
+            updateDynamicLevelingGain(samples: samples, count: frames, stride: Int(stride), maxUpGain: AudioDSPParameters.maxDynamicUpGain(forVolumeBoostDB: params.volumeBoostDB), currentGain: &levelingGain)
         }
         let dynFactor: Float = params.dynamicLevelingEnabled ? levelingGain : 1.0
         var lGain = leftGain * dynFactor
@@ -264,6 +285,7 @@ extension AudioTapProcessor {
         samples: UnsafeMutablePointer<Float>,
         count: Int,
         stride: Int,
+        maxUpGain: Float,
         currentGain: inout Float
     ) {
         guard count > 0 else { return }
@@ -278,7 +300,7 @@ extension AudioTapProcessor {
             return
         }
         let targetRMS: Float = 0.16
-        let desired = min(2.0, max(0.35, targetRMS / rms))
+        let desired = min(maxUpGain, max(0.35, targetRMS / rms))
         let coeff: Float = desired < currentGain ? 0.30 : 0.04
         currentGain += (desired - currentGain) * coeff
         if !currentGain.isFinite { currentGain = 1.0 }

@@ -9,6 +9,11 @@ public actor ChapterCacheStore: ChapterCaching {
         let updatedAt: Date
     }
 
+    private struct CachedPayload: Codable {
+        let savedAt: Date
+        let chapters: [ChapterDTO]
+    }
+
     private static let magicLZFSE = Data("DSLZ".utf8)
     private static let magicRawJSON = Data("DSJS".utf8)
     private static let maxDecompressedBytes = 32 * 1024 * 1024
@@ -19,6 +24,7 @@ public actor ChapterCacheStore: ChapterCaching {
     private let maxEntries: Int
     private var memoryCache: [String: MemoryEntry] = [:]
     private var memoryOrder: [String] = []
+    private var protectedBookIDs: Set<String> = []
 
     public init(baseDirectory: URL? = nil, maxEntries: Int = 200) {
         let root = baseDirectory ?? StorageContainerFactory.defaultStorageDirectory()
@@ -56,26 +62,41 @@ public actor ChapterCacheStore: ChapterCaching {
             return nil
         }
 
-        guard let validJSON = jsonData,
-              let chapters = try? JSONDecoder().decode([ChapterDTO].self, from: validJSON),
-              !chapters.isEmpty else {
+        let now = Date()
+        let mtime = (try? fileURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? now
+        let chapters: [ChapterDTO]
+        let savedAt: Date
+        if let validJSON = jsonData,
+           let envelope = try? JSONDecoder().decode(CachedPayload.self, from: validJSON),
+           !envelope.chapters.isEmpty {
+            chapters = envelope.chapters
+            savedAt = envelope.savedAt
+        } else if let validJSON = jsonData,
+                  let legacy = try? JSONDecoder().decode([ChapterDTO].self, from: validJSON),
+                  !legacy.isEmpty {
+            chapters = legacy
+            savedAt = mtime
+        } else {
             try? FileManager.default.removeItem(at: fileURL)
             return nil
         }
 
-        let now = Date()
-        let mtime = (try? fileURL.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? now
         if now.timeIntervalSince(mtime) > Self.mtimeTouchIntervalSeconds {
             try? FileManager.default.setAttributes([.modificationDate: now], ofItemAtPath: fileURL.path)
         }
-        storeInMemory(chapters: chapters, updatedAt: mtime, bookID: bookID)
-        return (chapters, mtime)
+        storeInMemory(chapters: chapters, updatedAt: savedAt, bookID: bookID)
+        return (chapters, savedAt)
+    }
+
+    public func updateProtectedBookIDs(_ ids: Set<String>) {
+        protectedBookIDs = ids
     }
 
     public func saveChapters(_ chapters: [ChapterDTO], bookID: String) async throws {
         guard !chapters.isEmpty else { return }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let jsonData = try JSONEncoder().encode(chapters)
+        let now = Date()
+        let jsonData = try JSONEncoder().encode(CachedPayload(savedAt: now, chapters: chapters))
         let fileURL = cacheURL(for: bookID)
 
         var output: Data
@@ -87,7 +108,7 @@ public actor ChapterCacheStore: ChapterCaching {
             output.append(jsonData)
         }
         try output.write(to: fileURL, options: [.atomic])
-        storeInMemory(chapters: chapters, updatedAt: Date(), bookID: bookID)
+        storeInMemory(chapters: chapters, updatedAt: now, bookID: bookID)
         trimIfNeeded()
     }
 
@@ -122,6 +143,7 @@ public actor ChapterCacheStore: ChapterCaching {
 
     /// 清理目录缓存，同时保护指定书籍（如当前正在播放与已离线下载书籍），避免离线场景丢目录
     public func clearAll(preservingBookIDs protectedIDs: Set<String>) async {
+        protectedBookIDs = protectedIDs
         guard !protectedIDs.isEmpty else {
             await clearAll()
             return
@@ -136,6 +158,44 @@ public actor ChapterCacheStore: ChapterCaching {
         ) else { return }
         for file in files where !protectedFiles.contains(file.lastPathComponent) {
             try? FileManager.default.removeItem(at: file)
+        }
+    }
+
+    /// 按最久未修改顺序裁剪非保护书籍的章节目录磁盘缓存至目标字节上限
+    public func trimOldestCaches(toMaxBytes maxBytes: Int64, preservingBookIDs protectedIDs: Set<String>) async {
+        protectedBookIDs = protectedIDs
+        let cap = max(0, maxBytes)
+        let protectedFiles = Set(protectedIDs.map { "\(DSCrypto.sha256Hex($0)).dscache" })
+        let hashToBookID: [String: String] = Dictionary(
+            uniqueKeysWithValues: memoryCache.keys.map { ("\(DSCrypto.sha256Hex($0)).dscache", $0) }
+        )
+        guard let files = try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey],
+            options: [.skipsHiddenFiles]
+        ) else { return }
+
+        var totalBytes: Int64 = 0
+        var evictable: [(url: URL, name: String, date: Date, size: Int64)] = []
+        for file in files {
+            let vals = try? file.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+            let size = Int64(max(0, vals?.fileSize ?? 0))
+            totalBytes += size
+            let name = file.lastPathComponent
+            if !protectedFiles.contains(name) {
+                let date = vals?.contentModificationDate ?? .distantPast
+                evictable.append((file, name, date, size))
+            }
+        }
+        guard totalBytes > cap else { return }
+        for item in evictable.sorted(by: { $0.date < $1.date }) {
+            guard totalBytes > cap else { break }
+            try? FileManager.default.removeItem(at: item.url)
+            if let bid = hashToBookID[item.name] {
+                memoryCache.removeValue(forKey: bid)
+                memoryOrder.removeAll { $0 == bid }
+            }
+            totalBytes -= item.size
         }
     }
 
@@ -164,13 +224,18 @@ public actor ChapterCacheStore: ChapterCaching {
             options: [.skipsHiddenFiles]
         ), files.count > maxEntries else { return }
 
+        let protectedFiles = Set(protectedBookIDs.map { "\(DSCrypto.sha256Hex($0)).dscache" })
+        let evictableFiles = files.filter { !protectedFiles.contains($0.lastPathComponent) }
+        let excess = files.count - maxEntries
+        guard excess > 0, !evictableFiles.isEmpty else { return }
+
         // AUD-37：先 map 提取 (url, mtime) 再排序，避免排序比较器内重复触发文件系统属性读取
-        let entriesWithDates: [(url: URL, mtime: Date)] = files.map { url in
+        let entriesWithDates: [(url: URL, mtime: Date)] = evictableFiles.map { url in
             let mtime = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
             return (url: url, mtime: mtime)
         }
         let sorted = entriesWithDates.sorted { $0.mtime < $1.mtime }
-        for stale in sorted.prefix(files.count - maxEntries) {
+        for stale in sorted.prefix(excess) {
             try? FileManager.default.removeItem(at: stale.url)
         }
     }

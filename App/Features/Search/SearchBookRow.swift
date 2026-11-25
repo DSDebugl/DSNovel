@@ -58,9 +58,7 @@ struct SearchBookRow: View {
     private static let coverSide: CGFloat = 72
 
     private var narratorText: String {
-        let n = book.narrator.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !n.isEmpty { return n }
-        return book.author.trimmingCharacters(in: .whitespacesAndNewlines)
+        DSMetadataSanitizer.displayNarratorOrAuthor(author: book.author, narrator: book.narrator)
     }
 
     private var statusText: String {

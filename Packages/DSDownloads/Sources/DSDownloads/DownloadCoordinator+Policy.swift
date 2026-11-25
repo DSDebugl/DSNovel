@@ -98,7 +98,7 @@ extension DownloadCoordinator {
             updated.append(latest)
         }
         if !updated.isEmpty {
-            try? await persistence.upsertDownloadsBatch(updated)
+            await persistBatchWithLogging(updated, context: "批量暂停")
             refreshManualRecords()
         }
         scheduleNextIfPossible()
@@ -121,7 +121,7 @@ extension DownloadCoordinator {
             updated.append(rec)
         }
         if !updated.isEmpty {
-            try? await persistence.upsertDownloadsBatch(updated)
+            await persistBatchWithLogging(updated, context: "批量恢复")
             refreshManualRecords()
         }
         scheduleNextIfPossible()
@@ -173,6 +173,11 @@ extension DownloadCoordinator {
 
         guard !evictIDs.isEmpty else { return }
         await evictPrecacheBatch(ids: evictIDs)
+    }
+
+    /// 按给定字节上限裁剪最久自动预缓存（仅淘汰 .precache，绝不触碰 .manual 手动下载）
+    public func trimPrecache(toMaxBytes maxBytes: Int64) async {
+        await enforceGlobalPrecacheCapIfNeeded(protectingTaskID: nil, maxTotalPrecacheBytes: max(0, maxBytes))
     }
 
     func enforceGlobalPrecacheCapIfNeeded(

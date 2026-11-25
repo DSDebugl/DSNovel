@@ -10,6 +10,7 @@ struct SpeedSheet: View {
     @Environment(PlaybackCoordinator.self) private var playback
     @Environment(AppSettingsStore.self) private var settings
     @Environment(DSBannerCoordinator.self) private var banner
+    @State private var sliderDraftRate: Double?
     private let onDismiss: () -> Void
     private let presets: [Double] = [0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0]
 
@@ -26,8 +27,17 @@ struct SpeedSheet: View {
         ]
     }
 
+    private var displayedRate: Double {
+        sliderDraftRate ?? playback.playbackRate
+    }
+
+    private func snapSpeed(_ raw: Double) -> Double {
+        min(3.0, max(0.5, (raw * 20.0).rounded() / 20.0))
+    }
+
     private func applySpeed(_ raw: Double) {
-        let snapped = min(3.0, max(0.5, (raw * 20.0).rounded() / 20.0))
+        let snapped = snapSpeed(raw)
+        sliderDraftRate = nil
         if abs(snapped - playback.playbackRate) > 0.001 {
             DSHaptics.selection()
         }
@@ -55,14 +65,14 @@ struct SpeedSheet: View {
         VStack(spacing: DSSpacing.md) {
             HStack(spacing: DSSpacing.md) {
                 Button {
-                    applySpeed(playback.playbackRate - 0.05)
+                    applySpeed(displayedRate - 0.05)
                 } label: {
                     HStack(spacing: 3) {
                         Image(systemName: "minus")
                         Text("0.05")
                     }
                     .font(DSTypography.numericCaption.weight(.semibold))
-                    .foregroundStyle(playback.playbackRate <= 0.5 ? DSColors.inkSecondary : DSColors.inkPrimary)
+                    .foregroundStyle(displayedRate <= 0.5 ? DSColors.inkSecondary : DSColors.inkPrimary)
                     .padding(.horizontal, DSSpacing.sm)
                     .frame(minHeight: 40)
                     .background(Capsule().fill(DSColors.surfaceGrouped))
@@ -70,12 +80,12 @@ struct SpeedSheet: View {
                     .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
-                .disabled(playback.playbackRate <= 0.5)
+                .disabled(displayedRate <= 0.5)
                 .accessibilityLabel("减速 0.05 倍")
 
                 Spacer(minLength: 4)
 
-                Text(PlayerSpeedFormatter.format(playback.playbackRate))
+                Text(PlayerSpeedFormatter.format(displayedRate))
                     .font(DSTypography.bookTitleLarge.monospacedDigit())
                     .foregroundStyle(DSColors.accent)
                     .contentTransition(reduceMotion ? .identity : .numericText())
@@ -83,14 +93,14 @@ struct SpeedSheet: View {
                 Spacer(minLength: 4)
 
                 Button {
-                    applySpeed(playback.playbackRate + 0.05)
+                    applySpeed(displayedRate + 0.05)
                 } label: {
                     HStack(spacing: 3) {
                         Image(systemName: "plus")
                         Text("0.05")
                     }
                     .font(DSTypography.numericCaption.weight(.semibold))
-                    .foregroundStyle(playback.playbackRate >= 3.0 ? DSColors.inkSecondary : DSColors.inkPrimary)
+                    .foregroundStyle(displayedRate >= 3.0 ? DSColors.inkSecondary : DSColors.inkPrimary)
                     .padding(.horizontal, DSSpacing.sm)
                     .frame(minHeight: 40)
                     .background(Capsule().fill(DSColors.surfaceGrouped))
@@ -98,18 +108,29 @@ struct SpeedSheet: View {
                     .contentShape(Capsule())
                 }
                 .buttonStyle(.plain)
-                .disabled(playback.playbackRate >= 3.0)
+                .disabled(displayedRate >= 3.0)
                 .accessibilityLabel("加速 0.05 倍")
             }
 
             VStack(spacing: 4) {
                 Slider(
                     value: Binding(
-                        get: { playback.playbackRate },
-                        set: { applySpeed($0) }
+                        get: { displayedRate },
+                        set: { newValue in
+                            let snapped = snapSpeed(newValue)
+                            if abs(snapped - displayedRate) > 0.001 {
+                                DSHaptics.selection()
+                            }
+                            sliderDraftRate = snapped
+                        }
                     ),
                     in: 0.5...3.0,
-                    step: 0.05
+                    step: 0.05,
+                    onEditingChanged: { editing in
+                        if !editing, let pending = sliderDraftRate {
+                            applySpeed(pending)
+                        }
+                    }
                 )
                 .tint(DSColors.accent)
 
@@ -135,7 +156,7 @@ struct SpeedSheet: View {
                     .font(DSTypography.cardTitle)
                     .foregroundStyle(DSColors.inkPrimary)
                 Spacer()
-                if abs(playback.playbackRate - 1.0) > 0.01 {
+                if abs(displayedRate - 1.0) > 0.01 {
                     Button {
                         applySpeed(1.0)
                     } label: {
@@ -149,7 +170,7 @@ struct SpeedSheet: View {
 
             LazyVGrid(columns: gridColumns, spacing: DSSpacing.xs) {
                 ForEach(presets, id: \.self) { rate in
-                    let isSelected = abs(playback.playbackRate - rate) < 0.01
+                    let isSelected = abs(displayedRate - rate) < 0.01
                     Button {
                         applySpeed(rate)
                     } label: {

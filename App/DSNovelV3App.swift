@@ -43,6 +43,8 @@ struct DSNovelV3App: App {
                 .environment(container.banner)
                 .modelContainer(container.modelContainer)
                 .preferredColorScheme(resolvedColorScheme(for: container.settings.themeMode))
+                .tint(DSColors.accent(for: container.settings.accentTheme))
+                .environment(\.dsAccentTheme, container.settings.accentTheme)
                 .task {
                     await container.startAsyncServicesIfNeeded()
                 }

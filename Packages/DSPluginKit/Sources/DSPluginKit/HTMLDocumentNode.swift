@@ -27,6 +27,7 @@ import JavaScriptCore
 }
 
 /// 零外部依赖纯 Swift HTML5 DOM 节点与 CSS 选择器引擎（AUD-14：256 层深度限制、显式迭代栈、4096 单标签扫描上限）
+/// 并发不变量：节点树仅在解析构建期于单线程内部写入 `childNodes`/`textContent`，解析完成后即视为只读快照并在所属 `JSContext` 串行队列内使用。
 @objc public final class HTMLDocumentNode: NSObject, HTMLNodeJSExport, @unchecked Sendable {
     internal static let maxDepth = 256
     private static let maxTagScanLength = 4096

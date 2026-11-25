@@ -6,7 +6,7 @@ import Foundation
 /// 随包内置书源解压与幂等初始化器（L-CI-2/L-IOS-4：严格使用 ZIPArchiveReader 强校验并剥离任何非法条目）
 enum BundledSourceSeeder {
     static let bundledArchiveName = "ShunAudiobookPro-v5.6"
-    static let seedVersionTag = "v5.6.10-v3"
+    static let seedVersionTag = "v5.6.14-v1"
 
     private struct Manifest: Decodable {
         let name: String

@@ -11,6 +11,8 @@ public final class DownloadCoordinator: OfflineAudioLocating {
     public private(set) var manualRecords: [DownloadRecordSnapshot] = []
     public internal(set) var totalDiskBytes: Int64 = 0
     public internal(set) var completedRevision: UInt64 = 0
+    public var dynamicPrecacheCapBytes: Int64?
+    public var onPrecacheCompleted: (@MainActor () async -> Void)?
     public var isWaitingForWiFi: Bool { wifiOnlyEnabled && !isCurrentlyOnWiFi }
     public let progressFeed = DownloadProgressFeed()
 
@@ -35,6 +37,9 @@ public final class DownloadCoordinator: OfflineAudioLocating {
     var inFlightFinalizingIDs: Set<String> = []
     var isBootstrapped: Bool = false
     var isBootstrapFinished: Bool = false
+    var dirtyPersistenceIDs: Set<String> = []
+    var dirtyRetryTask: Task<Void, Never>?
+    var dirtyRetryAttemptCount: Int = 0
     private(set) var didLoadPersistenceSuccessfully: Bool = false
     var pendingTransferEvents: [BackgroundTransferEvent] = []
     var expectedExtByTaskID: [String: String] = [:]
@@ -109,7 +114,7 @@ public final class DownloadCoordinator: OfflineAudioLocating {
                 allRecordsByID[rec.id] = rec
             }
             if !recoveredBatch.isEmpty {
-                try? await persistence.upsertDownloadsBatch(recoveredBatch)
+                await persistBatchWithLogging(recoveredBatch, context: "启动恢复")
             }
             isBootstrapped = true
             let buffered = pendingTransferEvents
@@ -158,7 +163,7 @@ public final class DownloadCoordinator: OfflineAudioLocating {
         }
         latest.state = .paused
         allRecordsByID[id] = latest
-        try? await persistence.upsertDownload(latest)
+        await persistRecordWithDirtyRetry(latest)
         refreshManualRecords()
         scheduleNextIfPossible()
     }
@@ -174,7 +179,7 @@ public final class DownloadCoordinator: OfflineAudioLocating {
         rec.retryNotBefore = nil
         rec.errorMessage = nil
         allRecordsByID[id] = rec
-        try? await persistence.upsertDownload(rec)
+        await persistRecordWithDirtyRetry(rec)
         refreshManualRecords()
         scheduleNextIfPossible()
     }

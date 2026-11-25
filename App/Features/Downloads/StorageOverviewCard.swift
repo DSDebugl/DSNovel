@@ -2,23 +2,32 @@ import DSDesignSystem
 import Foundation
 import SwiftUI
 
-/// 存储空间概览卡片（1:1 复刻 v2.8：已下载 / 预缓存 / 剩余空间 + 清理预缓存胶囊）
+/// 下载管理顶部概览卡（仅展示离线已下载体积、书籍/章数、设备可用空间与队列状态，移除冗余清理预缓存按钮）
 struct StorageOverviewCard: View {
     let manualBytes: Int64
-    let precacheBytes: Int64
+    let bookCount: Int
+    let completedChapterCount: Int
+    let activeCount: Int
     let freeDiskBytes: Int64
-    private let onClearPrecache: () -> Void
+    let hasPausedTasks: Bool
+    private let onTogglePauseResumeAll: () -> Void
 
     init(
         manualBytes: Int64,
-        precacheBytes: Int64,
+        bookCount: Int,
+        completedChapterCount: Int,
+        activeCount: Int,
         freeDiskBytes: Int64,
-        onClearPrecache: @escaping () -> Void
+        hasPausedTasks: Bool,
+        onTogglePauseResumeAll: @escaping () -> Void
     ) {
         self.manualBytes = manualBytes
-        self.precacheBytes = precacheBytes
+        self.bookCount = bookCount
+        self.completedChapterCount = completedChapterCount
+        self.activeCount = activeCount
         self.freeDiskBytes = freeDiskBytes
-        self.onClearPrecache = onClearPrecache
+        self.hasPausedTasks = hasPausedTasks
+        self.onTogglePauseResumeAll = onTogglePauseResumeAll
     }
 
     private func fmt(_ bytes: Int64) -> String {
@@ -26,24 +35,45 @@ struct StorageOverviewCard: View {
     }
 
     var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: DSSpacing.xs) {
-                Text("存储概览")
-                    .font(DSTypography.rowTitle)
+        HStack(alignment: .center, spacing: DSSpacing.sm) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text("离线已下载")
+                    .font(DSTypography.caption)
+                    .foregroundStyle(DSColors.inkSecondary)
+                Text(fmt(manualBytes))
+                    .font(DSTypography.title.monospacedDigit().weight(.semibold))
                     .foregroundStyle(DSColors.inkPrimary)
-                Text("已下载 \(fmt(manualBytes)) · 预缓存 \(fmt(precacheBytes)) · 剩余 \(fmt(freeDiskBytes))")
+                    .contentTransition(.numericText())
+                Text("共 \(bookCount) 本 · \(completedChapterCount) 章离线音频")
                     .font(DSTypography.numericCaption)
                     .foregroundStyle(DSColors.inkSecondary)
             }
-            Spacer()
-            if precacheBytes > 0 {
-                Button("清理预缓存", action: onClearPrecache)
-                    .font(DSTypography.caption.weight(.semibold))
-                    .foregroundStyle(DSColors.accent)
-                    .padding(.horizontal, DSSpacing.sm)
-                    .padding(.vertical, DSSpacing.xs)
-                    .background(Capsule().fill(DSColors.surfaceGrouped))
+
+            Spacer(minLength: 8)
+
+            VStack(alignment: .trailing, spacing: 6) {
+                Text("可用 \(fmt(freeDiskBytes))")
+                    .font(DSTypography.numericCaption)
+                    .foregroundStyle(DSColors.inkSecondary)
+
+                if activeCount > 0 {
+                    Button(action: onTogglePauseResumeAll) {
+                        Text(hasPausedTasks ? "继续全部 (\(activeCount))" : "暂停全部 (\(activeCount))")
+                            .font(DSTypography.caption2.weight(.semibold))
+                            .foregroundStyle(DSColors.accent)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(Capsule().fill(DSColors.accent.opacity(0.14)))
+                    }
                     .buttonStyle(.plain)
+                } else {
+                    Text("无进行中任务")
+                        .font(DSTypography.caption2)
+                        .foregroundStyle(DSColors.inkSecondary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Capsule().fill(DSColors.surfaceGrouped))
+                }
             }
         }
         .padding(DSSpacing.md)

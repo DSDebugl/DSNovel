@@ -5,7 +5,7 @@ import DSPlayback
 import Foundation
 import SwiftUI
 
-/// 单本书离线下载详情页（1:1 复刻 v2.8：顶部概览卡+书籍页胶囊 → 本书进行中/失败分区 → 已下载章节优先还原完整目录起播）
+/// 单本书离线下载详情页（紧凑布局：封面头卡 + 继续离线播放/批量管理 + 正/倒序切换 + ... 菜单收口高危操作）
 struct BookDownloadDetailView: View {
     @Environment(AppContainer.self) var container
     @Environment(DownloadCoordinator.self) var downloads
@@ -21,15 +21,35 @@ struct BookDownloadDetailView: View {
     @State var completedItems: [DownloadRecordSnapshot] = []
     @State var totalBytes: Int64 = 0
 
+    @State var isDescendingOrder = false
+    @State var isBatchManaging = false
+    @State var selectedRecordIDs: Set<String> = []
     @State var showAllActive = false
     @State var showAllFailed = false
     @State var pendingDeleteItem: DownloadRecordSnapshot?
     @State var showClearAllConfirm = false
     @State var showClearFailedConfirm = false
+    @State var showBatchDeleteConfirm = false
 
     init(bookID: String, bookTitle: String) {
         self.bookID = bookID
         self.bookTitle = bookTitle
+    }
+
+    var displayedCompletedItems: [DownloadRecordSnapshot] {
+        isDescendingOrder ? Array(completedItems.reversed()) : completedItems
+    }
+
+    var coverURLString: String {
+        completedItems.first(where: { !$0.coverURL.isEmpty })?.coverURL
+            ?? activeItems.first(where: { !$0.coverURL.isEmpty })?.coverURL
+            ?? failedItems.first(where: { !$0.coverURL.isEmpty })?.coverURL
+            ?? ""
+    }
+
+    var primaryQualityBadge: String {
+        guard let sample = completedItems.first else { return "" }
+        return DownloadsDataHelper.qualityBadgeText(for: sample)
     }
 
     func formatBytes(_ bytes: Int64) -> String {
@@ -70,18 +90,58 @@ struct BookDownloadDetailView: View {
                     }
                 }
                 .listStyle(.insetGrouped)
+                .listSectionSpacing(.compact)
                 .scrollContentBackground(.hidden)
                 .background(DSColors.surfaceGrouped)
             }
         }
         .background(DSColors.surfaceGrouped)
-        .navigationTitle(bookTitle)
+        .navigationTitle("离线章节")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                if !isEmptyAll {
-                    Button("清空全部", role: .destructive) {
-                        showClearAllConfirm = true
+                if isBatchManaging {
+                    HStack(spacing: DSSpacing.sm) {
+                        Button("全选") {
+                            if selectedRecordIDs.count == completedItems.count {
+                                selectedRecordIDs.removeAll()
+                            } else {
+                                selectedRecordIDs = Set(completedItems.map(\.id))
+                            }
+                        }
+                        .font(DSTypography.caption.weight(.semibold))
+                        Button("删除(\(selectedRecordIDs.count))", role: .destructive) {
+                            if !selectedRecordIDs.isEmpty {
+                                showBatchDeleteConfirm = true
+                            }
+                        }
+                        .font(DSTypography.caption.weight(.semibold))
+                        .disabled(selectedRecordIDs.isEmpty)
+                    }
+                } else if !isEmptyAll {
+                    Menu {
+                        if !completedItems.isEmpty {
+                            Button {
+                                isBatchManaging = true
+                                selectedRecordIDs.removeAll()
+                            } label: {
+                                Label("批量管理章节", systemImage: "checkmark.circle")
+                            }
+                        }
+                        Button {
+                            Task { await openBookDetailPage() }
+                        } label: {
+                            Label("前往书籍页", systemImage: "book")
+                        }
+                        Divider()
+                        Button(role: .destructive) {
+                            showClearAllConfirm = true
+                        } label: {
+                            Label("清空全部离线", systemImage: "trash")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                            .foregroundStyle(DSColors.inkPrimary)
                     }
                 }
             }
@@ -107,6 +167,17 @@ struct BookDownloadDetailView: View {
             Button("取消", role: .cancel) { pendingDeleteItem = nil }
         } message: {
             Text("删除后释放本地存储空间，再次收听需联网或重新下载。")
+        }
+        .alert(
+            "确认删除已选的 \(selectedRecordIDs.count) 章离线音频？",
+            isPresented: $showBatchDeleteConfirm
+        ) {
+            Button("删除所选章节", role: .destructive) {
+                Task { await deleteSelectedChapters() }
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("仅删除本地离线文件，不影响书架收藏与收听进度。")
         }
         .alert(
             DownloadsDataHelper.clearAllAlertTitle(
@@ -137,84 +208,32 @@ struct BookDownloadDetailView: View {
         } message: {
             Text("清空后仅移除失败队列记录，不影响已下载的离线音频。")
         }
-        .onAppear { refreshPartitionedItems() }
-        .onChange(of: downloads.manualRecords) { _, _ in refreshPartitionedItems() }
-    }
-
-    func refreshPartitionedItems() {
-        let p = DownloadsDataHelper.partitionRecordsForBook(bookID, from: downloads.manualRecords)
-        activeItems = p.active
-        failedItems = p.failed
-        completedItems = p.completed
-        totalBytes = p.completed.reduce(Int64(0)) { $0 + max(0, $1.totalBytes) }
-    }
-
-    func openBookDetailPage() async {
-        let book = await resolveBookSummary()
-        router.push(.bookDetail(book))
-    }
-
-    private func resolveBookSummary() async -> BookSummaryDTO {
-        if let exact = try? await container.persistence.fetchBook(id: bookID) {
-            return exact
-        }
-        let sample = completedItems.first ?? activeItems.first ?? failedItems.first
-        return BookSummaryDTO(
-            id: bookID,
-            sourceID: sample?.sourceID ?? "",
-            bookURL: "",
-            title: bookTitle,
-            coverURL: sample?.coverURL ?? "",
-            totalChapters: completedItems.count
-        )
-    }
-
-    /// 优先从 ChapterCacheStore 还原完整目录队列再定位对应章起播，无缓存时回退已下载列表
-    func playOffline(record: DownloadRecordSnapshot, fallbackIndex: Int) async {
-        DSHaptics.selection()
-        let book = await resolveBookSummary()
-        if let cached = await container.chapterCache.loadChapters(bookID: bookID), !cached.isEmpty {
-            let matchIdx = cached.firstIndex(where: { $0.id == record.chapterID })
-                ?? (cached.indices.contains(record.chapterIndex) ? record.chapterIndex : nil)
-            if let startIdx = matchIdx {
-                playback.play(book: book, chapters: cached, startIndex: startIdx, autoPlay: true)
-                return
+        .safeAreaInset(edge: .bottom) {
+            if isBatchManaging {
+                HStack(spacing: DSSpacing.sm) {
+                    Text("已选 \(selectedRecordIDs.count) 章")
+                        .font(DSTypography.subheadline.weight(.medium))
+                        .foregroundStyle(DSColors.inkPrimary)
+                    Spacer()
+                    Button(role: .destructive) {
+                        if !selectedRecordIDs.isEmpty { showBatchDeleteConfirm = true }
+                    } label: {
+                        Text("删除所选")
+                            .font(DSTypography.subheadline.weight(.semibold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, DSSpacing.md)
+                            .padding(.vertical, 8)
+                            .background(Capsule().fill(selectedRecordIDs.isEmpty ? DSColors.inkSecondary.opacity(0.35) : DSColors.danger))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(selectedRecordIDs.isEmpty)
+                }
+                .padding(.horizontal, DSSpacing.pageHorizontal)
+                .padding(.vertical, DSSpacing.sm)
+                .background(.ultraThinMaterial)
             }
         }
-        let fallbackQueue = completedItems.map { rec in
-            ChapterDTO(id: rec.chapterID, index: rec.chapterIndex, title: rec.chapterTitle, url: rec.chapterURL)
-        }
-        let safeIdx = min(max(0, fallbackIndex), max(0, fallbackQueue.count - 1))
-        guard fallbackQueue.indices.contains(safeIdx) else { return }
-        playback.play(book: book, chapters: fallbackQueue, startIndex: safeIdx, autoPlay: true)
-    }
-
-    func pauseBookActive() async {
-        for item in activeItems where item.state != .paused {
-            await downloads.pause(id: item.id)
-        }
-    }
-
-    func resumeBookActive() async {
-        for item in activeItems where item.state == .paused {
-            await downloads.resume(id: item.id)
-        }
-    }
-
-    func retryBookFailed() async {
-        for item in failedItems {
-            await downloads.resume(id: item.id)
-        }
-        banner.show("已重新加入下载队列", tone: .info)
-    }
-
-    func clearBookFailed() async {
-        let targets = failedItems
-        for item in targets {
-            await downloads.cancelAndDelete(id: item.id)
-        }
-        if !targets.isEmpty {
-            banner.show("已清空 \(targets.count) 章失败记录", tone: .info)
-        }
+        .onAppear { refreshPartitionedItems() }
+        .onChange(of: downloads.manualRecords) { _, _ in refreshPartitionedItems() }
     }
 }

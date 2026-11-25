@@ -92,6 +92,18 @@ final class SourceOrganizeModel {
         rebuildBuckets()
     }
 
+    @discardableResult
+    func moveGroups(from offsets: IndexSet, to destination: Int) -> [String] {
+        var nonDefault = groupNames.filter { $0 != SourceListHelper.defaultGroupName }
+        let validOffsets = IndexSet(offsets.filter { $0 < nonDefault.count })
+        guard !validOffsets.isEmpty else { return nonDefault }
+        let clampedDest = min(max(0, destination), nonDefault.count)
+        nonDefault.move(fromOffsets: validOffsets, toOffset: clampedDest)
+        groupNames = nonDefault + [SourceListHelper.defaultGroupName]
+        rebuildBuckets()
+        return nonDefault
+    }
+
     func moveAllSources(from offsets: IndexSet, to destination: Int) {
         allSources.move(fromOffsets: offsets, toOffset: destination)
         allSources = allSources.enumerated().map { idx, src in

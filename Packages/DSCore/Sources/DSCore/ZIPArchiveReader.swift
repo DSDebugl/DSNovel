@@ -9,6 +9,7 @@ public enum ZIPArchiveError: Error, Sendable, Equatable, LocalizedError {
     case totalSizeExceeded(Int)
     case invalidPath(String)
     case truncatedLocalHeader(String)
+    case encryptedArchive
     case unsupportedCompression(UInt16)
     case decompressionFailed(String)
     case crcMismatch(entry: String, expected: UInt32, actual: UInt32)
@@ -18,9 +19,10 @@ public enum ZIPArchiveError: Error, Sendable, Equatable, LocalizedError {
         case .invalidArchive: return "无效的 ZIP 压缩包"
         case .entryLimitExceeded(let maxCount): return "ZIP 条目数量超过上限（\(maxCount)）"
         case .entrySizeExceeded(let name, _): return "ZIP 条目体积超限：\(name)"
-        case .totalSizeExceeded: return "ZIP 总解压体积超过上限（32 MB）"
+        case .totalSizeExceeded: return "ZIP 总解压体积超过上限（\(ZIPArchiveReader.maxTotalBytes / (1024 * 1024)) MB）"
         case .invalidPath(let name): return "ZIP 包含非法路径：\(name)"
         case .truncatedLocalHeader(let name): return "ZIP 本地文件头越界或损坏：\(name)"
+        case .encryptedArchive: return "暂不支持加密的 ZIP 压缩包"
         case .unsupportedCompression(let method): return "不支持的 ZIP 压缩算法：\(method)"
         case .decompressionFailed(let name): return "ZIP 条目解压失败：\(name)"
         case .crcMismatch(let entry, _, _): return "ZIP 条目 CRC-32 校验失败：\(entry)"
@@ -88,7 +90,7 @@ public struct ZIPArchiveReader: Sendable {
             let generalFlags = readUInt16(data, at: cursor + 8)
             let method = readUInt16(data, at: cursor + 10)
             guard (generalFlags & 0x0001) == 0 else {
-                throw ZIPArchiveError.unsupportedCompression(method)
+                throw ZIPArchiveError.encryptedArchive
             }
             let expectedCRC = readUInt32(data, at: cursor + 16)
             let compressedSize = Int(readUInt32(data, at: cursor + 20))

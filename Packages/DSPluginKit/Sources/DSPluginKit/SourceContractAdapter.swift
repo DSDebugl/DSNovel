@@ -183,8 +183,12 @@ public enum SourceContractAdapter {
             guard let title = nonEmpty(d["title"], d["name"]),
                   let url = nonEmpty(d["url"], d["bookUrl"]) else { return nil }
             let id = "\(sourceID)::\(DSCrypto.md5Hex(url))"
-            let author = nonEmpty(d["author"], d["artist"]) ?? ""
-            let narrator = nonEmpty(d["narrator"], d["announcer"], d["anchor"], d["artist"]) ?? ""
+            let author = DSMetadataSanitizer.firstValidPersonName(
+                nonEmpty(d["author"]), nonEmpty(d["artist"])
+            ) ?? ""
+            let narrator = DSMetadataSanitizer.firstValidPersonName(
+                nonEmpty(d["narrator"]), nonEmpty(d["announcer"]), nonEmpty(d["anchor"]), nonEmpty(d["artist"])
+            ) ?? ""
             let cover = nonEmpty(d["cover"], d["coverUrl"], d["img"]) ?? ""
             let intro = nonEmpty(d["intro"], d["description"]) ?? ""
             let latest = nonEmpty(d["latestChapter"], d["lastChapter"], d["status"]) ?? ""
@@ -234,8 +238,12 @@ public enum SourceContractAdapter {
             sourceName: fallback.sourceName,
             bookURL: fallback.bookURL,
             title: nonEmpty(dict["title"], dict["name"]) ?? fallback.title,
-            author: nonEmpty(dict["author"], dict["artist"]) ?? fallback.author,
-            narrator: nonEmpty(dict["narrator"], dict["announcer"], dict["anchor"], dict["artist"]) ?? fallback.narrator,
+            author: DSMetadataSanitizer.firstValidPersonName(
+                nonEmpty(dict["author"]), nonEmpty(dict["artist"]), fallback.author
+            ) ?? "",
+            narrator: DSMetadataSanitizer.firstValidPersonName(
+                nonEmpty(dict["narrator"]), nonEmpty(dict["announcer"]), nonEmpty(dict["anchor"]), nonEmpty(dict["artist"]), fallback.narrator
+            ) ?? "",
             coverURL: nonEmpty(dict["cover"], dict["coverUrl"], dict["img"]) ?? fallback.coverURL,
             intro: nonEmpty(dict["intro"], dict["description"]) ?? fallback.intro,
             latestChapter: nonEmpty(chapters.last?.title, dict["status"]) ?? fallback.latestChapter,

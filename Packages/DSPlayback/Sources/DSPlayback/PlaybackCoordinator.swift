@@ -19,12 +19,10 @@ public final class PlaybackCoordinator {
     public var playbackRate: Double = 1.0 {
         didSet {
             let clamped = playbackRate.isFinite ? min(3.0, max(0.5, playbackRate)) : 1.0
-            if playbackRate != clamped {
-                playbackRate = clamped
-                return
-            }
-            if state.isPlaying && !isSeeking { player.rate = Float(playbackRate) }
-            syncNowPlaying()
+            if playbackRate != clamped { playbackRate = clamped; return }
+            guard abs(oldValue - playbackRate) > 0.0001 else { return }
+            if state.isPlaying && !isSeeking { applyLivePlaybackRate(Float(playbackRate)) }
+            scheduleDebouncedNowPlayingSync()
         }
     }
     public var preferredQuality: AudioQualityTier = .auto
@@ -61,6 +59,7 @@ public final class PlaybackCoordinator {
     var pendingResumePositionMs: Int?
     var lastListeningTickAt: Date?
     var probedQualityCache: [String: AudioQualityTier] = [:]
+    var nowPlayingSyncDebounceTask: Task<Void, Never>?
 
     public var currentChapter: ChapterDTO? {
         guard chapters.indices.contains(currentChapterIndex) else { return nil }
@@ -86,6 +85,7 @@ public final class PlaybackCoordinator {
     public func tearDown() {
         loadTask?.cancel()
         loadTask = nil
+        nowPlayingSyncDebounceTask?.cancel(); nowPlayingSyncDebounceTask = nil
         dsp.resetWatchdog()
         sleepTimer.cancel()
         isSeeking = false

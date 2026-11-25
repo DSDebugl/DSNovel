@@ -5,10 +5,11 @@ import DSStorage
 import Foundation
 import SwiftUI
 
-/// 存储管理页（空间分布概览 + 离线下载管理入口 + 封面/目录缓存清理）
+/// 存储管理页（4 段空间分布 + 离线下载入口 + 统一缓存清理 + 缓存上限自动清理滑块）
 struct StoragePrefsView: View {
     @Environment(AppContainer.self) var container
     @Environment(DownloadCoordinator.self) var downloads
+    @Environment(AppSettingsStore.self) var settings
     @Environment(AppRouter.self) var router
     @Environment(DSBannerCoordinator.self) var banner
 
@@ -23,20 +24,29 @@ struct StoragePrefsView: View {
 
     @State var isClearingCache = false
     @State var showClearAllCacheConfirm = false
-
-    var offlineTotalBytes: Int64 {
-        manualAudioBytes + precacheBytes
-    }
+    @State var limitEvaluateTask: Task<Void, Never>?
+    @State var hasPendingLimitEnforcement = false
 
     var appTotalBytes: Int64 {
-        offlineTotalBytes + coverCacheBytes + chapterCacheBytes
+        manualAudioBytes + precacheBytes + coverCacheBytes + chapterCacheBytes
     }
 
     var clearableCacheBytes: Int64 {
         precacheBytes + coverCacheBytes + chapterCacheBytes
     }
 
+    private var formattedLimitText: String {
+        let mb = settings.cacheLimitMB
+        if mb >= 2000 { return "2 GB" }
+        if mb >= 1024 {
+            let gb = Double(mb) / 1024.0
+            return abs(gb - gb.rounded()) < 0.05 ? String(format: "%.0f GB", gb) : String(format: "%.1f GB", gb)
+        }
+        return "\(mb) MB"
+    }
+
     var body: some View {
+        @Bindable var bindableSettings = settings
         List {
             Section {
                 storageOverviewCard
@@ -66,7 +76,7 @@ struct StoragePrefsView: View {
 
                         Spacer(minLength: 4)
 
-                        Text(formatBytes(offlineTotalBytes))
+                        Text(formatBytes(manualAudioBytes))
                             .font(DSTypography.numericFootnote)
                             .foregroundStyle(DSColors.inkSecondary)
 
@@ -80,31 +90,19 @@ struct StoragePrefsView: View {
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("storage_downloads_entry")
                 .listRowBackground(DSColors.surfaceCard)
-
-                if precacheBytes > 0 {
-                    Button {
-                        Task { await clearPrecacheOnly() }
-                    } label: {
-                        HStack {
-                            Label("清理自动预缓存", systemImage: "bolt.horizontal.circle")
-                                .foregroundStyle(DSColors.inkPrimary)
-                            Spacer()
-                            Text(formatBytes(precacheBytes))
-                                .font(DSTypography.numericFootnote)
-                                .foregroundStyle(DSColors.inkSecondary)
-                        }
-                        .frame(minHeight: 44)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .disabled(isClearingCache)
-                    .listRowBackground(DSColors.surfaceCard)
-                }
             } header: {
                 Text("离线下载")
             }
 
             Section {
+                cacheRow(
+                    icon: "bolt.fill",
+                    title: "自动预缓存",
+                    bytes: precacheBytes,
+                    action: { Task { await clearPrecacheOnly() } }
+                )
+                .listRowBackground(DSColors.surfaceCard)
+
                 cacheRow(
                     icon: "photo.stack",
                     title: "封面图片缓存",
@@ -142,8 +140,54 @@ struct StoragePrefsView: View {
                 .listRowBackground(DSColors.surfaceCard)
             } header: {
                 Text("缓存清理")
+            }
+
+            Section {
+                Toggle("到达上限自动清理", isOn: $bindableSettings.autoCacheCleanupEnabled)
+                    .tint(DSColors.accent)
+                    .listRowBackground(DSColors.surfaceCard)
+
+                if settings.autoCacheCleanupEnabled {
+                    VStack(alignment: .leading, spacing: DSSpacing.xs) {
+                        HStack {
+                            Text("缓存上限")
+                                .font(DSTypography.subheadline)
+                                .foregroundStyle(DSColors.inkPrimary)
+                            Spacer()
+                            Text(formattedLimitText)
+                                .font(DSTypography.numericFootnote.weight(.semibold))
+                                .foregroundStyle(DSColors.accent)
+                        }
+
+                        Slider(
+                            value: Binding(
+                                get: { Double(settings.cacheLimitMB) },
+                                set: { settings.cacheLimitMB = Int(($0 / 100.0).rounded() * 100.0) }
+                            ),
+                            in: 200...2000,
+                            step: 100
+                        )
+                        .tint(DSColors.accent)
+
+                        HStack {
+                            Text("200 MB")
+                            Spacer()
+                            Text("500 MB")
+                            Spacer()
+                            Text("1 GB")
+                            Spacer()
+                            Text("2 GB")
+                        }
+                        .font(DSTypography.caption2.monospacedDigit())
+                        .foregroundStyle(DSColors.inkSecondary)
+                    }
+                    .padding(.vertical, 4)
+                    .listRowBackground(DSColors.surfaceCard)
+                }
+            } header: {
+                Text("自动清理上限")
             } footer: {
-                Text("清理缓存仅释放封面图片、章节目录与自动预缓存，不会删除手动下载的离线音频、书架收藏或收听进度。")
+                Text("仅统计自动预缓存、封面与章节目录；超过上限时按最久未用自动清理，绝不删除手动下载的离线书籍与收听进度。")
                     .font(DSTypography.caption)
                     .foregroundStyle(DSColors.inkSecondary)
             }
@@ -165,9 +209,28 @@ struct StoragePrefsView: View {
         .onChange(of: downloads.manualRecords) { _, _ in
             Task { await refreshStorageStats() }
         }
-        .task {
-            await refreshStorageStats()
+        .onChange(of: downloads.completedRevision) { _, _ in
+            Task { await refreshStorageStats() }
         }
+        .onChange(of: settings.autoCacheCleanupEnabled) { _, enabled in
+            container.syncSettingsToEngines()
+            if enabled { scheduleLimitEnforcement() }
+        }
+        .onChange(of: settings.cacheLimitMB) { _, _ in
+            container.syncSettingsToEngines()
+            scheduleLimitEnforcement()
+        }
+        .onDisappear {
+            limitEvaluateTask?.cancel()
+            if hasPendingLimitEnforcement {
+                hasPendingLimitEnforcement = false
+                let targetContainer = container
+                Task { @MainActor in
+                    _ = await StorageCachePolicyEngine.enforceLimitIfNeeded(container: targetContainer)
+                }
+            }
+        }
+        .task { await refreshStorageStats() }
     }
 
     private var storageOverviewCard: some View {
@@ -195,8 +258,13 @@ struct StoragePrefsView: View {
 
             storageBreakdownBar
 
-            HStack(spacing: DSSpacing.md) {
-                legendItem(color: DSColors.accent, title: "离线音频", bytes: offlineTotalBytes)
+            LazyVGrid(
+                columns: Array(repeating: GridItem(.flexible(), spacing: DSSpacing.xs), count: 4),
+                alignment: .leading,
+                spacing: 4
+            ) {
+                legendItem(color: DSColors.accent, title: "离线下载", bytes: manualAudioBytes)
+                legendItem(color: DSColors.warning, title: "预缓存", bytes: precacheBytes)
                 legendItem(color: Color.blue, title: "封面", bytes: coverCacheBytes)
                 legendItem(color: DSColors.inkSecondary, title: "目录", bytes: chapterCacheBytes)
             }
@@ -217,9 +285,7 @@ struct StoragePrefsView: View {
                     Rectangle().fill(DSColors.separator.opacity(0.35))
                 } else {
                     ForEach(segments) { seg in
-                        Rectangle()
-                            .fill(seg.color)
-                            .frame(width: seg.width)
+                        Rectangle().fill(seg.color).frame(width: seg.width)
                     }
                 }
             }
@@ -229,13 +295,17 @@ struct StoragePrefsView: View {
     }
 
     private func legendItem(color: Color, title: String, bytes: Int64) -> some View {
-        HStack(spacing: 4) {
-            Circle()
-                .fill(color)
-                .frame(width: 7, height: 7)
-            Text("\(title) \(formatBytes(bytes))")
+        VStack(alignment: .leading, spacing: 1) {
+            HStack(spacing: 4) {
+                Circle().fill(color).frame(width: 6, height: 6)
+                Text(title)
+                    .font(DSTypography.caption2)
+                    .foregroundStyle(DSColors.inkSecondary)
+                    .lineLimit(1)
+            }
+            Text(formatBytes(bytes))
                 .font(DSTypography.caption2.monospacedDigit())
-                .foregroundStyle(DSColors.inkSecondary)
+                .foregroundStyle(DSColors.inkPrimary.opacity(0.85))
                 .lineLimit(1)
         }
     }
@@ -255,8 +325,11 @@ struct StoragePrefsView: View {
                     .font(DSTypography.numericFootnote)
                     .foregroundStyle(DSColors.inkSecondary)
                 Text("清理")
-                    .font(DSTypography.caption.weight(.medium))
+                    .font(DSTypography.caption.weight(.semibold))
                     .foregroundStyle(bytes > 0 ? DSColors.accent : DSColors.inkSecondary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(bytes > 0 ? DSColors.accent.opacity(0.14) : DSColors.surfaceGrouped))
                     .padding(.leading, 4)
             }
             .frame(minHeight: 44)

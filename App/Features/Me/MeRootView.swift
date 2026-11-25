@@ -58,8 +58,14 @@ struct MeRootView: View {
 
     var body: some View {
         @Bindable var bindable = settings
+        let _ = settings.accentTheme
         ScrollView {
-            VStack(alignment: .leading, spacing: DSSpacing.md) {
+            VStack(alignment: .leading, spacing: 22) {
+                Text("设置")
+                    .font(DSTypography.bookTitleLarge)
+                    .foregroundStyle(DSColors.inkPrimary)
+                    .padding(.top, 4)
+
                 sectionGroup(title: "听书") {
                     listeningCard(bindable: $bindable)
                 }
@@ -73,14 +79,14 @@ struct MeRootView: View {
                 }
             }
             .padding(.horizontal, DSSpacing.pageHorizontal)
-            .padding(.top, DSSpacing.xs)
-            .padding(.bottom, DSSpacing.lg)
+            .padding(.top, DSSpacing.sm)
+            .padding(.bottom, DSSpacing.xl)
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("me_root")
         .background(DSColors.surfaceBase)
         .navigationTitle("设置")
-        .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.hidden, for: .navigationBar)
         .onChange(of: container.sourcesRevision) { _, _ in
             Task { await refreshSummary() }
         }
@@ -100,11 +106,11 @@ struct MeRootView: View {
     }
 
     private func sectionGroup<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 10) {
             Text(title)
-                .font(DSTypography.caption.weight(.medium))
+                .font(DSTypography.footnote.weight(.medium))
                 .foregroundStyle(DSColors.inkSecondary)
-                .padding(.leading, 4)
+                .padding(.leading, 6)
 
             content()
                 .background(
@@ -147,7 +153,7 @@ struct MeRootView: View {
                         .foregroundStyle(DSColors.inkSecondary.opacity(0.70))
                 }
                 .padding(.horizontal, DSSpacing.md)
-                .frame(minHeight: 48)
+                .frame(minHeight: 56)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -168,7 +174,7 @@ struct MeRootView: View {
                 container.syncSettingsToEngines()
             }
             .padding(.horizontal, DSSpacing.md)
-            .frame(minHeight: 48)
+            .frame(minHeight: 56)
 
             insetDivider
 
@@ -192,6 +198,10 @@ struct MeRootView: View {
             }
             .padding(DSSpacing.sm)
 
+            insetDivider
+
+            ThemeColorPickerRow(selection: bindable.accentTheme)
+
             if isEffectiveDarkAppearance {
                 insetDivider
                 Toggle(isOn: bindable.nightDimEnabled) {
@@ -204,7 +214,7 @@ struct MeRootView: View {
                 }
                 .tint(DSColors.accent)
                 .padding(.horizontal, DSSpacing.md)
-                .frame(minHeight: 48)
+                .frame(minHeight: 56)
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
@@ -217,7 +227,7 @@ struct MeRootView: View {
             DSHaptics.selection()
             settings.themeMode = mode
         } label: {
-            VStack(spacing: 5) {
+            VStack(spacing: 7) {
                 Image(systemName: icon)
                     .font(DSTypography.callout.weight(.medium))
                     .foregroundStyle(isSelected ? DSColors.accent : DSColors.inkPrimary.opacity(0.78))
@@ -226,7 +236,7 @@ struct MeRootView: View {
                     .foregroundStyle(isSelected ? DSColors.accent : DSColors.inkPrimary)
                     .lineLimit(1)
             }
-            .frame(maxWidth: .infinity, minHeight: 54)
+            .frame(maxWidth: .infinity, minHeight: 66)
             .background(
                 RoundedRectangle(cornerRadius: DSRadius.input, style: .continuous)
                     .fill(isSelected ? DSColors.accent.opacity(0.12) : DSColors.surfaceGrouped)
@@ -245,7 +255,12 @@ struct MeRootView: View {
     }
 
     private var systemCard: some View {
-        VStack(spacing: 0) {
+        @Bindable var bindable = settings
+        return VStack(spacing: 0) {
+            DefaultLaunchTabRow(selection: $bindable.defaultLaunchTab)
+
+            insetDivider
+
             navRow(
                 icon: "externaldrive.fill",
                 title: "存储管理",
@@ -273,16 +288,16 @@ struct MeRootView: View {
     private var insetDivider: some View {
         Divider()
             .overlay(DSColors.separator.opacity(0.28))
-            .padding(.leading, 54)
+            .padding(.leading, 60)
     }
 
     private func rowBadgeIcon(_ systemName: String, isAccent: Bool) -> some View {
         Image(systemName: systemName)
-            .font(DSTypography.caption.weight(.semibold))
+            .font(DSTypography.footnote.weight(.semibold))
             .foregroundStyle(isAccent ? DSColors.accent : DSColors.inkSecondary)
-            .frame(width: 28, height: 28)
+            .frame(width: 32, height: 32)
             .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
                     .fill(isAccent ? DSColors.accent.opacity(0.14) : DSColors.inkSecondary.opacity(0.12))
             )
             .accessibilityHidden(true)
@@ -316,7 +331,7 @@ struct MeRootView: View {
                     .foregroundStyle(DSColors.inkSecondary.opacity(0.70))
             }
             .padding(.horizontal, DSSpacing.md)
-            .frame(minHeight: 48)
+            .frame(minHeight: 56)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

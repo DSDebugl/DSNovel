@@ -1,3 +1,4 @@
+import DSCore
 import Foundation
 
 /// 书名与演播信息规范化格式化器（保留 v3.0 既有公开静态接口并补全 v2.8 拆分与前缀剥离能力）
@@ -20,8 +21,8 @@ enum BookTitleFormatter {
     }
 
     static func narratorDisplay(author: String, narrator: String) -> String {
-        let a = author.trimmingCharacters(in: .whitespacesAndNewlines)
-        let n = narrator.trimmingCharacters(in: .whitespacesAndNewlines)
+        let a = DSMetadataSanitizer.cleanPersonName(author)
+        let n = DSMetadataSanitizer.cleanPersonName(narrator)
         func suffix(_ name: String) -> String {
             (name.hasSuffix("播讲") || name.hasSuffix("演播")) ? name : "\(name) 播讲"
         }

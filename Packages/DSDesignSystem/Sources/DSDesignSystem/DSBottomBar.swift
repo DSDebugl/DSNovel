@@ -27,6 +27,7 @@ public enum DSMainTab: String, CaseIterable, Sendable, Identifiable {
 
 /// 一体化超薄单胶囊底部悬浮栏（54pt 高：高对比度磨砂单胶囊 + 3 Tab 赤陶圆点指示 + 竖线内嵌迷你播放控制 + 克制底部渐隐羽化）
 public struct DSBottomBar<CenterSlot: View>: View {
+    @Environment(\.dsAccentTheme) private var accentTheme
     public static var totalHeight: CGFloat { 58 }
 
     private let selectedTab: DSMainTab
@@ -50,6 +51,7 @@ public struct DSBottomBar<CenterSlot: View>: View {
     }
 
     public var body: some View {
+        let _ = accentTheme
         ZStack(alignment: .bottom) {
             LinearGradient(
                 colors: [

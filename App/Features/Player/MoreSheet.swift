@@ -81,7 +81,7 @@ struct MoreSheet: View {
     }
 
     private var narratorName: String {
-        playback.currentBook?.narrator.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        DSMetadataSanitizer.cleanPersonName(playback.currentBook?.narrator)
     }
 
     private func downloadedCountForCurrentBook() -> Int {

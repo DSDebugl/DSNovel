@@ -34,6 +34,12 @@ public final class AppSettingsStore {
     public var themeMode: AppThemeMode {
         didSet { defaults.set(themeMode.rawValue, forKey: Keys.themeMode) }
     }
+    public var accentTheme: DSAccentTheme {
+        didSet { defaults.set(accentTheme.rawValue, forKey: Keys.accentTheme) }
+    }
+    public var defaultLaunchTab: DSLaunchTab {
+        didSet { defaults.set(defaultLaunchTab.rawValue, forKey: Keys.defaultLaunchTab) }
+    }
     public var nightDimEnabled: Bool {
         didSet { defaults.set(nightDimEnabled, forKey: Keys.nightDimEnabled) }
     }
@@ -78,6 +84,19 @@ public final class AppSettingsStore {
     }
     public var autoPlayNextChapter: Bool {
         didSet { defaults.set(autoPlayNextChapter, forKey: Keys.autoPlayNextChapter) }
+    }
+    public var autoCacheCleanupEnabled: Bool {
+        didSet { defaults.set(autoCacheCleanupEnabled, forKey: Keys.autoCacheCleanupEnabled) }
+    }
+    public var cacheLimitMB: Int {
+        didSet {
+            let clamped = Self.clampCacheLimitMB(cacheLimitMB)
+            if cacheLimitMB != clamped {
+                cacheLimitMB = clamped
+                return
+            }
+            defaults.set(cacheLimitMB, forKey: Keys.cacheLimitMB)
+        }
     }
     public var onboardingCompleted: Bool {
         didSet { defaults.set(onboardingCompleted, forKey: Keys.onboardingCompleted) }
@@ -142,8 +161,21 @@ public final class AppSettingsStore {
         customSourceGroups.removeAll { $0 == name }
     }
 
+    public func reorderCustomSourceGroups(_ orderedNames: [String]) {
+        var result: [String] = []
+        var seen: Set<String> = []
+        for raw in orderedNames {
+            let clean = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !clean.isEmpty, clean != "默认分组", seen.insert(clean).inserted else { continue }
+            result.append(clean)
+        }
+        customSourceGroups = result
+    }
+
     private enum Keys {
         static let themeMode = "dsnovel.v3.themeMode"
+        static let accentTheme = "dsnovel.v3.accentTheme"
+        static let defaultLaunchTab = "dsnovel.v3.defaultLaunchTab"
         static let nightDimEnabled = "dsnovel.v3.nightDimEnabled"
         static let shelfLayout = "dsnovel.v3.shelfLayout"
         static let preferredQuality = "dsnovel.v3.preferredQuality"
@@ -158,6 +190,8 @@ public final class AppSettingsStore {
         static let lastDiscoverSourceID = "dsnovel.v3.lastDiscoverSourceID"
         static let bookQualityMap = "dsnovel.v3.bookQualityMap"
         static let customSourceGroups = "dsnovel.v3.customSourceGroups"
+        static let autoCacheCleanupEnabled = "dsnovel.app.autoCacheCleanupEnabled"
+        static let cacheLimitMB = "dsnovel.app.cacheLimitMB"
     }
 
     private static func clampPlaybackRate(_ value: Double) -> Double {
@@ -173,9 +207,15 @@ public final class AppSettingsStore {
         min(5, max(0, value))
     }
 
+    private static func clampCacheLimitMB(_ value: Int) -> Int {
+        min(2000, max(200, value))
+    }
+
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         self.themeMode = AppThemeMode(rawValue: defaults.string(forKey: Keys.themeMode) ?? "") ?? .system
+        self.accentTheme = DSAccentTheme(rawValue: defaults.string(forKey: Keys.accentTheme) ?? "") ?? .terracotta
+        self.defaultLaunchTab = DSLaunchTab(rawValue: defaults.string(forKey: Keys.defaultLaunchTab) ?? "") ?? .library
         self.nightDimEnabled = defaults.bool(forKey: Keys.nightDimEnabled)
         self.shelfLayout = ShelfLayoutMode(rawValue: defaults.string(forKey: Keys.shelfLayout) ?? "") ?? .grid
         self.preferredQuality = AudioQualityTier.fromParserToken(defaults.string(forKey: Keys.preferredQuality) ?? "") ?? .auto
@@ -196,6 +236,12 @@ public final class AppSettingsStore {
             self.precacheNextCount = 2
         }
         self.autoPlayNextChapter = defaults.object(forKey: Keys.autoPlayNextChapter) as? Bool ?? true
+        self.autoCacheCleanupEnabled = defaults.object(forKey: Keys.autoCacheCleanupEnabled) as? Bool ?? true
+        if let savedLimit = defaults.object(forKey: Keys.cacheLimitMB) as? Int {
+            self.cacheLimitMB = Self.clampCacheLimitMB(savedLimit)
+        } else {
+            self.cacheLimitMB = 500
+        }
         self.onboardingCompleted = defaults.bool(forKey: Keys.onboardingCompleted)
         self.bundledSourcesSeededVersion = defaults.string(forKey: Keys.bundledSeededVersion) ?? ""
         self.builtinParserUnlocked = defaults.bool(forKey: Keys.builtinParserUnlocked)

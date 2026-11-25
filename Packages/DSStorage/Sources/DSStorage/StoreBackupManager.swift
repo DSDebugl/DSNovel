@@ -117,7 +117,8 @@ public actor StoreBackupManager {
 
         if FileManager.default.fileExists(atPath: storeURL.path) {
             if verifySQLiteIntegrity(at: storeURL) {
-                _ = try? createBackupInternal(prune: false, excludingFromPrune: backup.url)
+                // F2：当前库完整时必须成功生成安全快照，失败则中止恢复，防止无保底覆盖当前数据
+                _ = try createBackupInternal(prune: false, excludingFromPrune: backup.url)
             } else {
                 let corruptedDir = storeURL.deletingLastPathComponent().appendingPathComponent(".corrupted", isDirectory: true)
                 try? FileManager.default.createDirectory(at: corruptedDir, withIntermediateDirectories: true)
@@ -128,19 +129,27 @@ public actor StoreBackupManager {
             }
         }
 
-        // 先移除旧 WAL/SHM，避免替换主库瞬间旧 WAL 被误重放
-        try? FileManager.default.removeItem(at: walURL)
-        try? FileManager.default.removeItem(at: shmURL)
+        // 先将旧 WAL/SHM 重命名为 .bak，替换成功后再删 .bak，替换失败则回滚还原 .bak
+        let walBakURL = URL(fileURLWithPath: walURL.path + ".bak")
+        let shmBakURL = URL(fileURLWithPath: shmURL.path + ".bak")
+        try? FileManager.default.removeItem(at: walBakURL)
+        try? FileManager.default.removeItem(at: shmBakURL)
+        let movedWal = (try? FileManager.default.moveItem(at: walURL, to: walBakURL)) != nil
+        let movedShm = (try? FileManager.default.moveItem(at: shmURL, to: shmBakURL)) != nil
 
-        if FileManager.default.fileExists(atPath: storeURL.path) {
-            _ = try FileManager.default.replaceItemAt(storeURL, withItemAt: tempTarget)
-        } else {
-            try FileManager.default.moveItem(at: tempTarget, to: storeURL)
+        do {
+            if FileManager.default.fileExists(atPath: storeURL.path) {
+                _ = try FileManager.default.replaceItemAt(storeURL, withItemAt: tempTarget)
+            } else {
+                try FileManager.default.moveItem(at: tempTarget, to: storeURL)
+            }
+            try? FileManager.default.removeItem(at: walBakURL)
+            try? FileManager.default.removeItem(at: shmBakURL)
+        } catch {
+            if movedWal { try? FileManager.default.moveItem(at: walBakURL, to: walURL) }
+            if movedShm { try? FileManager.default.moveItem(at: shmBakURL, to: shmURL) }
+            throw error
         }
-
-        // 替换后再次幂等清理伴生文件
-        try? FileManager.default.removeItem(at: walURL)
-        try? FileManager.default.removeItem(at: shmURL)
     }
 
     /// 极端无备份逃生舱（UX3-02 / AUD-08）：将损坏库及伴生 -wal/-shm 一并归档至 .corrupted/ 取证，再清理残留以重建干净空库

@@ -32,13 +32,23 @@ struct SourceOrganizeSheet: View {
                     ForEach(model.groupNames, id: \.self) { groupName in
                         groupRow(groupName)
                             .listRowBackground(DSColors.surfaceCard)
+                            .moveDisabled(groupName == SourceListHelper.defaultGroupName)
+                    }
+                    .onMove { offsets, dest in
+                        let ordered = model.moveGroups(from: offsets, to: dest)
+                        DSHaptics.selection()
+                        settings.reorderCustomSourceGroups(ordered)
+                        onSaved()
                     }
                 } header: {
-                    HStack {
+                    HStack(spacing: DSSpacing.sm) {
                         Text("书源分组")
                             .font(DSTypography.footnote)
                             .foregroundStyle(DSColors.inkSecondary)
                         Spacer()
+                        Text("可拖动排序")
+                            .font(DSTypography.caption2)
+                            .foregroundStyle(DSColors.inkSecondary)
                         Button {
                             DSHaptics.selection()
                             createGroupInput = ""

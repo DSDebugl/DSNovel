@@ -101,7 +101,7 @@ public struct DSBookCard: View {
     }
 
     private var narratorOrAuthor: String {
-        book.narrator.isEmpty ? book.author : book.narrator
+        DSMetadataSanitizer.displayNarratorOrAuthor(author: book.author, narrator: book.narrator)
     }
 
     private var isLargeCard: Bool {

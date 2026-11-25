@@ -60,8 +60,8 @@ final class DSB19AuditClosureTests: XCTestCase {
 
         let reader = ZIPArchiveReader()
         XCTAssertThrowsError(try reader.readAll(from: zip)) { error in
-            guard case ZIPArchiveError.unsupportedCompression = error else {
-                return XCTFail("Expected unsupportedCompression for encrypted ZIP entry, got \(error)")
+            guard case ZIPArchiveError.encryptedArchive = error else {
+                return XCTFail("Expected encryptedArchive for encrypted ZIP entry, got \(error)")
             }
         }
     }

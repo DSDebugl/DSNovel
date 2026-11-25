@@ -67,10 +67,12 @@ public struct DSBookRow: View {
     }
 
     private var metaText: String {
-        switch (book.author.isEmpty, book.narrator.isEmpty) {
-        case (false, false): return "\(book.author) · \(book.narrator)"
-        case (false, true): return book.author
-        case (true, false): return book.narrator
+        let a = DSMetadataSanitizer.cleanPersonName(book.author)
+        let n = DSMetadataSanitizer.cleanPersonName(book.narrator)
+        switch (a.isEmpty, n.isEmpty) {
+        case (false, false): return a.lowercased() == n.lowercased() ? n : "\(a) · \(n)"
+        case (false, true): return a
+        case (true, false): return n
         case (true, true): return ""
         }
     }
@@ -86,7 +88,7 @@ public struct DSBookRow: View {
     }
 
     private var narratorTarget: String {
-        book.narrator.isEmpty ? book.author : book.narrator
+        DSMetadataSanitizer.displayNarratorOrAuthor(author: book.author, narrator: book.narrator)
     }
 
     public var body: some View {

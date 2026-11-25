@@ -86,8 +86,8 @@ public actor CookieVault {
                 let rExp = storedCookies[rhs].expiresDate
                 switch (lExp, rExp) {
                 case (nil, nil): return lhs < rhs
-                case (nil, .some): return false
-                case (.some, nil): return true
+                case (nil, .some): return true
+                case (.some, nil): return false
                 case (.some(let l), .some(let r)): return l != r ? l < r : lhs < rhs
                 }
             }

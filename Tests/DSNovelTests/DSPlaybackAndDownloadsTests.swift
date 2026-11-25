@@ -120,4 +120,46 @@ final class DSPlaybackAndDownloadsTests: XCTestCase {
         XCTAssertNil(CoverImagePipeline.validateAndDecodeImage(data: fakeHTML, contentType: "text/html"))
         XCTAssertNil(CoverImagePipeline.validateAndDecodeImage(data: fakeHTML, contentType: "image/jpeg"))
     }
+
+    @MainActor
+    func testPlaybackRateClampingAndRapidSwitch() async {
+        struct StubResolver: AudioResolving {
+            func resolveAudio(
+                sourceID: String,
+                bookID: String,
+                chapter: ChapterDTO,
+                preferredQuality: AudioQualityTier,
+                forDownload: Bool
+            ) async throws -> AudioStreamDTO {
+                AudioStreamDTO(url: URL(string: "https://example.com/a.mp3")!, qualityTier: preferredQuality, isHLS: false)
+            }
+        }
+        struct StubProgress: PlaybackProgressPersisting {
+            func saveProgress(
+                book: BookSummaryDTO,
+                chapter: ChapterDTO,
+                positionMs: Int,
+                durationMs: Int,
+                isFinished: Bool,
+                overrideFinished: Bool
+            ) async {}
+            func loadChapterProgress(bookID: String, chapterID: String) async -> (positionMs: Int, durationMs: Int, isFinished: Bool)? { nil }
+            func loadBookSkipConfig(bookID: String) async -> SkipConfigDTO { SkipConfigDTO() }
+            func saveBookSkipConfig(bookID: String, config: SkipConfigDTO) async {}
+        }
+        let logger = DSDiagnosticLogStore()
+        let coordinator = PlaybackCoordinator(audioResolver: StubResolver(), progressStore: StubProgress(), logger: logger)
+        defer { coordinator.tearDown() }
+
+        coordinator.playbackRate = 5.0
+        XCTAssertEqual(coordinator.playbackRate, 3.0, accuracy: 0.001)
+        coordinator.playbackRate = 0.1
+        XCTAssertEqual(coordinator.playbackRate, 0.5, accuracy: 0.001)
+        coordinator.playbackRate = .nan
+        XCTAssertEqual(coordinator.playbackRate, 1.0, accuracy: 0.001)
+        for rate in [1.25, 1.5, 2.0, 1.75, 1.25] {
+            coordinator.playbackRate = rate
+        }
+        XCTAssertEqual(coordinator.playbackRate, 1.25, accuracy: 0.001)
+    }
 }

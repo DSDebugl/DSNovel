@@ -7,6 +7,13 @@ import Observation
 @Observable
 @MainActor
 final class DiscoverViewModel {
+    var customSourceGroups: [String] = [] {
+        didSet {
+            if oldValue != customSourceGroups {
+                rebuildSourceSections()
+            }
+        }
+    }
     var sources: [SourceMetaDTO] = [] {
         didSet { rebuildSourceSections() }
     }
@@ -24,10 +31,10 @@ final class DiscoverViewModel {
     var shelfBookIDs: Set<String> = []
 
     var sourceSections: [DiscoverSourceSection] = []
-    private(set) var categoryChips: [DSChipItem<String>] = []
-    private(set) var categorySections: [DiscoverCategorySection] = []
-    private(set) var sectionChips: [DSChipItem<Int>] = []
-    private(set) var tabChips: [DSChipItem<Int>] = []
+    var categoryChips: [DSChipItem<String>] = []
+    var categorySections: [DiscoverCategorySection] = []
+    var sectionChips: [DSChipItem<Int>] = []
+    var tabChips: [DSChipItem<Int>] = []
     var subTabChips: [DSChipItem<Int>] = []
     var selectedSectionIndex: Int = 0
     var selectedTabIndex: Int = 0
@@ -41,11 +48,31 @@ final class DiscoverViewModel {
     var nextPageURL: String?
     var seenBookIDs: Set<String> = []
     var consecutiveDuplicatePages = 0
+    var rawCategories: [DiscoverCategoryDTO] = []
     private var generation: UInt64 = 0
     private var loadMoreTask: Task<Void, Never>?
+    var activeFeedTask: Task<Void, Never>?
+    var categoryProbeTask: Task<Void, Never>?
+    var coverPrefetchTask: Task<Void, Never>?
     var categoriesCache: [String: DiscoverCategoryCacheEntry] = [:]
     var feedCache: [String: DiscoverFeedCacheEntry] = [:]
     var feedCacheOrder: [String] = []
+    var emptyCategoriesBySource: [String: [String: TimeInterval]] = [:]
+    var prefetchedCoverURLs: Set<String> = []
+
+    init() {
+        loadPersistedEmptyCategories()
+    }
+
+    /// 托管单条前台加载任务：切换分类或书源时立刻取消前序在飞请求与后台预探测，杜绝并发抢槽与限流假空态
+    func triggerForegroundTask(_ work: @escaping @MainActor () async -> Void) {
+        activeFeedTask?.cancel()
+        cancelBackgroundPreloads()
+        activeFeedTask = Task { [weak self] in
+            await work()
+            self?.activeFeedTask = nil
+        }
+    }
 
     var currentSourceName: String {
         sources.first(where: { $0.id == selectedSourceID })?.name ?? "发现"
@@ -55,6 +82,7 @@ final class DiscoverViewModel {
         await container.ensureSourcesRegistered()
         guard let all = try? await container.persistence.fetchAllSources() else { return }
         let enabled = Self.filterDiscoverSources(all.map(\.meta))
+        customSourceGroups = container.settings.customSourceGroups
         sources = enabled
         let prevSourceID = selectedSourceID
         if selectedSourceID.isEmpty || !enabled.contains(where: { $0.id == selectedSourceID }) {
@@ -85,6 +113,7 @@ final class DiscoverViewModel {
         await container.ensureSourcesRegistered()
         guard let all = try? await container.persistence.fetchAllSources() else { return }
         let enabled = Self.filterDiscoverSources(all.map(\.meta))
+        customSourceGroups = container.settings.customSourceGroups
         sources = enabled
         if !selectedSourceID.isEmpty && enabled.contains(where: { $0.id == selectedSourceID }) {
             container.activeDiscoverSourceID = selectedSourceID
@@ -112,18 +141,24 @@ final class DiscoverViewModel {
 
     func selectSource(_ id: String, container: AppContainer) async {
         cancelLoadMoreTask()
+        cancelBackgroundPreloads()
         selectedSourceID = id
         container.activeDiscoverSourceID = id
         container.settings.lastDiscoverSourceID = id
         await loadCategoriesAndFirstPage(container: container)
     }
 
-    /// 下拉原地刷新当前选中书源与分类（成功后再替换列表，失败保留旧列表并提示错误）
+    /// 下拉原地刷新当前选中书源与分类（同时重置本源空分类黑名单以便重新检验）
     func refreshCurrentCategory(container: AppContainer) async {
         cancelLoadMoreTask()
+        cancelBackgroundPreloads()
         guard !selectedSourceID.isEmpty else {
             await loadSources(container: container)
             return
+        }
+        clearEmptyCategories(for: selectedSourceID)
+        if !rawCategories.isEmpty && rawCategories.count != categories.count {
+            categories = rawCategories
         }
         let activeURL = resolvedRequestURL(for: activeCategoryURL)
         await loadFirstPage(categoryURL: activeURL, container: container, preserveExistingOnFailure: true, forceRemote: true)
@@ -140,55 +175,20 @@ final class DiscoverViewModel {
         await selectCategory(target, container: container)
     }
 
-    func selectSection(index: Int, container: AppContainer) async {
-        guard categorySections.indices.contains(index), index != selectedSectionIndex else { return }
-        selectedSectionIndex = index
-        selectedTabIndex = 0
-        selectedSubTabIndex = 0
-        rebuildTabChips()
-        rebuildSubTabChips()
-        guard let firstTab = categorySections[index].tabs.first else { return }
-        await selectCategory(firstTab.category, container: container)
-    }
-
-    func selectTab(index: Int, container: AppContainer) async {
-        guard categorySections.indices.contains(selectedSectionIndex) else { return }
-        let tabs = categorySections[selectedSectionIndex].tabs
-        guard tabs.indices.contains(index), index != selectedTabIndex else { return }
-        selectedTabIndex = index
-        selectedSubTabIndex = 0
-        rebuildSubTabChips()
-        await selectCategory(tabs[index].category, container: container)
-    }
-
     func loadNextPageIfNeeded(currentItemID: String, container: AppContainer) {
-        guard !isLoading, loadMoreTask == nil, hasMore, loadMoreError == nil, !books.isEmpty else { return }
-        let tailIndex = max(0, books.count - 6)
-        if let idx = books.firstIndex(where: { $0.id == currentItemID }), idx >= tailIndex {
-            startLoadMoreTask(container: container)
+        if let idx = books.firstIndex(where: { $0.id == currentItemID }) {
+            prefetchCovers(startingAt: idx + 1, container: container)
+            guard !isLoading, loadMoreTask == nil, hasMore, loadMoreError == nil, !books.isEmpty else { return }
+            let tailIndex = max(0, books.count - 6)
+            if idx >= tailIndex {
+                startLoadMoreTask(container: container)
+            }
         }
     }
 
     func retryLoadMore(container: AppContainer) {
         guard !isLoading, loadMoreTask == nil, hasMore else { return }
         startLoadMoreTask(container: container)
-    }
-
-    func loadShelfBookIDs(container: AppContainer) async {
-        let shelf = (try? await container.persistence.fetchShelfBooks()) ?? []
-        shelfBookIDs = Set(shelf.map(\.id))
-    }
-
-    func addToShelf(_ book: BookSummaryDTO, container: AppContainer) async -> Bool {
-        guard !shelfBookIDs.contains(book.id) else { return false }
-        do {
-            try await container.persistence.upsertBook(book, addToShelf: true)
-            shelfBookIDs.insert(book.id)
-            container.libraryRevision &+= 1
-            return true
-        } catch {
-            return false
-        }
     }
 
     private func resetDiscoverFeedState() {
@@ -231,18 +231,22 @@ final class DiscoverViewModel {
         errorMessage = nil
         loadMoreError = nil
         if let cachedCats = cachedCategories(for: selectedSourceID) {
-            categories = cachedCats
-            selectedCategoryID = cachedCats.first?.id ?? ""
-            await loadFirstPage(categoryURL: resolvedRequestURL(for: cachedCats.first?.url ?? ""), container: container)
+            rawCategories = cachedCats
+            let visible = filteredVisibleCategories(from: cachedCats, sourceID: selectedSourceID)
+            selectedCategoryID = visible.first?.id ?? ""
+            categories = visible
+            await loadFirstPage(categoryURL: resolvedRequestURL(for: visible.first?.url ?? ""), container: container)
             return
         }
         do {
             let cats = try await container.pluginRuntime.discoverCategories(sourceID: selectedSourceID)
             guard gen == generation else { return }
             storeCategoriesCache(cats, for: selectedSourceID)
-            categories = cats
-            selectedCategoryID = cats.first?.id ?? ""
-            await loadFirstPage(categoryURL: resolvedRequestURL(for: cats.first?.url ?? ""), container: container)
+            rawCategories = cats
+            let visible = filteredVisibleCategories(from: cats, sourceID: selectedSourceID)
+            selectedCategoryID = visible.first?.id ?? ""
+            categories = visible
+            await loadFirstPage(categoryURL: resolvedRequestURL(for: visible.first?.url ?? ""), container: container)
         } catch {
             if Self.isCancellationError(error) {
                 if gen == generation { isLoading = false }
@@ -264,8 +268,11 @@ final class DiscoverViewModel {
         generation &+= 1
         let gen = generation
         let cacheKey = feedCacheKey(sourceID: selectedSourceID, categoryURL: categoryURL)
+        cancelBackgroundPreloads()
         if !forceRemote, let cached = cachedFeed(for: cacheKey) {
             applyCachedFeed(cached)
+            prefetchCovers(startingAt: 0, container: container)
+            scheduleCategoryProbeIfNeeded(container: container)
             return
         }
         isLoading = true
@@ -282,12 +289,23 @@ final class DiscoverViewModel {
         }
 
         do {
-            let pageResult = try await container.pluginRuntime.discoverPage(
+            var pageResult = try await container.pluginRuntime.discoverPage(
                 sourceID: selectedSourceID,
                 categoryURL: categoryURL,
                 page: 1
             )
             guard gen == generation else { return }
+            // 首次返回空数组时延迟 350ms 静默重试 1 次，化解首次种 Cookie / 瞬时限流导致的假空态
+            if pageResult.books.isEmpty {
+                try? await Task.sleep(for: .milliseconds(350))
+                guard !Task.isCancelled, gen == generation else { return }
+                pageResult = try await container.pluginRuntime.discoverPage(
+                    sourceID: selectedSourceID,
+                    categoryURL: categoryURL,
+                    page: 1
+                )
+                guard gen == generation else { return }
+            }
             seenBookIDs.removeAll()
             consecutiveDuplicatePages = 0
             books = []
@@ -296,7 +314,12 @@ final class DiscoverViewModel {
             nextPageURL = pageResult.nextURL
             hasMore = pageResult.hasMore
             isLoading = false
-            storeFeedCache(key: cacheKey)
+            if !books.isEmpty {
+                markCategoryHasContent(sourceID: selectedSourceID, categoryID: selectedCategoryID)
+                storeFeedCache(key: cacheKey)
+                prefetchCovers(startingAt: 0, container: container)
+            }
+            scheduleCategoryProbeIfNeeded(container: container)
         } catch {
             if Self.isCancellationError(error) {
                 if gen == generation { isLoading = false }
@@ -355,25 +378,6 @@ final class DiscoverViewModel {
         for item in incoming where seenBookIDs.insert(item.id).inserted {
             books.append(item)
         }
-    }
-
-    private func rebuildCategoryChips() {
-        categoryChips = categories.map { DSChipItem(id: $0.id, title: $0.title) }
-        categorySections = DiscoverCategoryGrouping.buildSections(from: categories)
-        sectionChips = categorySections.map { DSChipItem(id: $0.id, title: $0.title) }
-        selectedSectionIndex = 0
-        selectedTabIndex = 0
-        selectedSubTabIndex = 0
-        rebuildTabChips()
-        rebuildSubTabChips()
-    }
-
-    private func rebuildTabChips() {
-        guard categorySections.indices.contains(selectedSectionIndex) else {
-            tabChips = []
-            return
-        }
-        tabChips = categorySections[selectedSectionIndex].tabs.map { DSChipItem(id: $0.id, title: $0.shortTitle) }
     }
 
 }

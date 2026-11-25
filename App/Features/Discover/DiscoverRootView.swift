@@ -5,6 +5,7 @@ import UIKit
 
 /// 首页根视图（融合单源逛分类 + 原地四态聚合搜索，退出搜索无损保留原浏览分类与滚动位置）
 struct DiscoverRootView: View {
+    @Environment(\.dsAccentTheme) private var accentTheme
     @Environment(\.dsEffectiveReduceMotion) private var reduceMotion
     @Environment(AppContainer.self) private var container
     @Environment(AppRouter.self) private var router
@@ -37,6 +38,7 @@ struct DiscoverRootView: View {
     }
 
     var body: some View {
+        let _ = accentTheme
         VStack(spacing: 0) {
             DiscoverHeaderBar(
                 currentSourceName: vm.currentSourceName,
@@ -64,13 +66,13 @@ struct DiscoverRootView: View {
                     exitSearchMode()
                 },
                 onSelectSection: { secIdx in
-                    Task { await vm.selectSection(index: secIdx, container: container) }
+                    vm.triggerForegroundTask { await vm.selectSection(index: secIdx, container: container) }
                 },
                 onSelectTab: { tabIdx in
-                    Task { await vm.selectTab(index: tabIdx, container: container) }
+                    vm.triggerForegroundTask { await vm.selectTab(index: tabIdx, container: container) }
                 },
                 onSelectSubTab: { subIdx in
-                    Task { await vm.selectSubTab(index: subIdx, container: container) }
+                    vm.triggerForegroundTask { await vm.selectSubTab(index: subIdx, container: container) }
                 }
             )
 
@@ -171,6 +173,7 @@ struct DiscoverRootView: View {
             }
         }
         .onDisappear {
+            vm.cancelBackgroundPreloads()
             if isSearchMode {
                 router.isBottomBarHidden = false
             }
@@ -187,6 +190,7 @@ struct DiscoverRootView: View {
     }
 
     private func enterSearchModeIfNeeded() {
+        vm.cancelBackgroundPreloads()
         searchVM.activeDiscoverSourceID = vm.selectedSourceID.isEmpty ? container.activeDiscoverSourceID : vm.selectedSourceID
         searchVM.activeDiscoverSourceName = vm.sources.isEmpty ? "" : vm.currentSourceName
         if !isSearchMode {
